@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/error-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { authFetch } from "@/lib/auth-fetch";
 import {
   ArrowLeft,
@@ -33,6 +34,8 @@ export default function RequestDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isCancelling, setIsCancelling] = React.useState(false);
+  const [showConfirmCancel, setShowConfirmCancel] = React.useState(false);
+  const [actionNotice, setActionNotice] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadRequest = React.useCallback(async () => {
     setLoading(true);
@@ -60,12 +63,9 @@ export default function RequestDetailPage() {
     if (id) loadRequest();
   }, [id, loadRequest]);
 
-  async function handleCancel() {
-    if (!confirm("Are you sure you want to cancel this service request? This action cannot be undone.")) {
-      return;
-    }
-
+  async function handleConfirmCancel() {
     setIsCancelling(true);
+    setActionNotice(null);
     try {
       const res = await authFetch(`/api/requests/${id}/transition`, {
         method: "POST",
@@ -76,15 +76,28 @@ export default function RequestDetailPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed to cancel service request.");
+        setActionNotice({
+          type: "error",
+          text: data.error || "Failed to cancel service request.",
+        });
+        setShowConfirmCancel(false);
         setIsCancelling(false);
         return;
       }
 
+      setActionNotice({
+        type: "success",
+        text: "Service request cancelled successfully.",
+      });
+      setShowConfirmCancel(false);
       await loadRequest();
     } catch (err) {
       console.error("Cancel request error:", err);
-      alert("An error occurred while cancelling the request.");
+      setActionNotice({
+        type: "error",
+        text: "An error occurred while cancelling the request.",
+      });
+      setShowConfirmCancel(false);
     } finally {
       setIsCancelling(false);
     }
@@ -120,7 +133,28 @@ export default function RequestDetailPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Back button */}
+      {/* Inline Action Message */}
+      {actionNotice && (
+        <div
+          className={`p-3.5 rounded-lg border text-xs flex items-center justify-between ${
+            actionNotice.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+          role="status"
+        >
+          <span>{actionNotice.text}</span>
+          <button
+            onClick={() => setActionNotice(null)}
+            className="text-gray-500 hover:text-gray-900 ml-4 font-bold"
+            aria-label="Dismiss message"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Back button and cancel action */}
       <div className="flex items-center justify-between">
         <Link
           href="/dashboard"
@@ -134,8 +168,7 @@ export default function RequestDetailPage() {
           <Button
             variant="ghost"
             size="sm"
-            isLoading={isCancelling}
-            onClick={handleCancel}
+            onClick={() => setShowConfirmCancel(true)}
             className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
           >
             <XCircle className="w-3.5 h-3.5" />
@@ -143,6 +176,18 @@ export default function RequestDetailPage() {
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={showConfirmCancel}
+        title="Cancel Service Request"
+        description="Are you sure you want to cancel this service request? This action cannot be undone."
+        confirmLabel="Yes, cancel request"
+        cancelLabel="Keep booking"
+        variant="danger"
+        isLoading={isCancelling}
+        onConfirm={handleConfirmCancel}
+        onCancel={() => setShowConfirmCancel(false)}
+      />
 
       {/* Main card */}
       <Card className="space-y-6">

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ServiceRequest } from "@/lib/types";
 import { authFetch } from "@/lib/auth-fetch";
@@ -10,6 +11,12 @@ import { EmptyState } from "@/components/empty-state";
 import { StepperSkeleton } from "@/components/loading-skeleton";
 import { ErrorState } from "@/components/error-state";
 import { Wrench, CheckCircle, Clock } from "lucide-react";
+
+export interface BannerNotice {
+  type: "success" | "error";
+  text: string;
+  actionLink?: { href: string; label: string };
+}
 
 export default function MechanicQueuePage() {
   const router = useRouter();
@@ -21,8 +28,27 @@ export default function MechanicQueuePage() {
   const [error, setError] = React.useState<string | null>(null);
 
   const [claimingId, setClaimingId] = React.useState<string | null>(null);
-  const [claimErrors, setClaimErrors] = React.useState<Record<string, string>>({});
-  const [bannerNotice, setBannerNotice] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [bannerNotice, setBannerNotice] = React.useState<BannerNotice | null>(null);
+  const bannerTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const showBanner = React.useCallback((notice: BannerNotice) => {
+    if (bannerTimerRef.current) {
+      clearTimeout(bannerTimerRef.current);
+    }
+    setBannerNotice(notice);
+    bannerTimerRef.current = setTimeout(() => {
+      setBannerNotice(null);
+      bannerTimerRef.current = null;
+    }, 6000);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) {
+        clearTimeout(bannerTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadQueue = React.useCallback(async () => {
     setLoading(true);
@@ -68,8 +94,6 @@ export default function MechanicQueuePage() {
 
   async function handleClaim(id: string) {
     setClaimingId(id);
-    setClaimErrors((prev) => ({ ...prev, [id]: "" }));
-    setBannerNotice(null);
 
     try {
       const res = await authFetch(`/api/requests/${id}/claim`, {
@@ -77,39 +101,39 @@ export default function MechanicQueuePage() {
       });
 
       if (res.status === 409) {
-        // Inline message for 409 without navigating, and refresh the queue
-        setClaimErrors((prev) => ({
-          ...prev,
-          [id]: "Already claimed by another mechanic",
-        }));
+        // Show banner on 409, then reload queue. Banner survives the reload.
+        showBanner({
+          type: "error",
+          text: "That job was already claimed by another mechanic.",
+        });
         setClaimingId(null);
         await loadQueue();
         return;
       }
 
       if (res.status === 401) {
-        // Inline message for 401 without navigating
-        setClaimErrors((prev) => ({
-          ...prev,
-          [id]: "Session expired, please sign in again",
-        }));
+        // Show banner on 401 with sign-in link, without navigating away
+        showBanner({
+          type: "error",
+          text: "Session expired, please sign in again.",
+          actionLink: { href: "/auth", label: "Sign in" },
+        });
         setClaimingId(null);
         return;
       }
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setClaimErrors((prev) => ({
-          ...prev,
-          [id]: data.error || "Failed to claim request.",
-        }));
+      if (res.status === 403 || !res.ok) {
+        // Generic failure message for 403 or other errors, never navigate away
+        showBanner({
+          type: "error",
+          text: "Failed to claim this job. Please try again.",
+        });
         setClaimingId(null);
         await loadQueue();
         return;
       }
 
-      setBannerNotice({
+      showBanner({
         type: "success",
         text: "Service request claimed successfully. Status updated to inspecting.",
       });
@@ -119,10 +143,10 @@ export default function MechanicQueuePage() {
       setActiveTab("assigned");
     } catch (err) {
       console.error("Claim error:", err);
-      setClaimErrors((prev) => ({
-        ...prev,
-        [id]: "Network error while claiming request.",
-      }));
+      showBanner({
+        type: "error",
+        text: "Failed to claim this job. Please try again.",
+      });
     } finally {
       setClaimingId(null);
     }
@@ -130,7 +154,7 @@ export default function MechanicQueuePage() {
 
   return (
     <div className="space-y-6">
-      {/* Banner */}
+      {/* Page-level Alert Banner */}
       {bannerNotice && (
         <div
           className={`p-3.5 rounded-lg border text-xs flex items-center justify-between ${
@@ -138,12 +162,26 @@ export default function MechanicQueuePage() {
               ? "bg-green-50 border-green-200 text-green-800"
               : "bg-red-50 border-red-200 text-red-800"
           }`}
-          role="status"
+          role="alert"
         >
-          <span>{bannerNotice.text}</span>
+          <div className="flex items-center gap-1.5 flex-1">
+            <span>{bannerNotice.text}</span>
+            {bannerNotice.actionLink && (
+              <Link
+                href={bannerNotice.actionLink.href}
+                className="font-medium underline hover:text-red-950 ml-1"
+              >
+                {bannerNotice.actionLink.label}
+              </Link>
+            )}
+          </div>
           <button
-            onClick={() => setBannerNotice(null)}
-            className="text-gray-500 hover:text-gray-900 ml-4 font-bold"
+            onClick={() => {
+              if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+              setBannerNotice(null);
+            }}
+            className="text-gray-500 hover:text-gray-900 ml-4 font-bold text-sm leading-none"
+            aria-label="Dismiss alert"
           >
             ×
           </button>
@@ -203,7 +241,6 @@ export default function MechanicQueuePage() {
                 role="mechanic"
                 onClaim={handleClaim}
                 isClaiming={claimingId === req.id}
-                claimError={claimErrors[req.id]}
               />
             ))
           )}
