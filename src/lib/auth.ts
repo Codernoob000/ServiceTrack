@@ -34,14 +34,13 @@ export async function getAuthenticatedUser(): Promise<AuthContext> {
       .single();
 
     if (profileError || !profile) {
-      // In case public.users trigger was delayed or user is missing, fallback to app_metadata if present, else customer
-      const fallbackRole = (user.app_metadata?.role as "customer" | "mechanic") || "customer";
+      // In case public.users trigger was delayed or user is missing, default strictly to customer
       const fallbackProfile: UserProfile = {
         id: user.id,
         name: (user.user_metadata?.name as string) || "",
         email: user.email || "",
         phone: (user.user_metadata?.phone as string) || null,
-        role: fallbackRole,
+        role: "customer",
         created_at: user.created_at,
       };
       return { user, profile: fallbackProfile, error: null };

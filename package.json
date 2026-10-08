@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/cross-user-access.test.ts"
+    "test": "tsx --test tests/cross-user-access.test.ts tests/role-authorization.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

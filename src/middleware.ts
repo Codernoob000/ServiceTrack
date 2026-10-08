@@ -37,6 +37,18 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
+  // Helper to carry updated cookies over on redirect
+  const createRedirectResponse = (targetPath: string) => {
+    const url = request.nextUrl.clone();
+    url.pathname = targetPath;
+    url.search = "";
+    const redirectRes = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((cookie) => {
+      redirectRes.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectRes;
+  };
+
   // Protected paths for logged-in users
   const isProtectedPath =
     path.startsWith("/dashboard") ||
@@ -50,15 +62,56 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
     url.searchParams.set("redirectTo", path);
-    return NextResponse.redirect(url);
+    const redirectRes = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((cookie) => {
+      redirectRes.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectRes;
   }
 
-  // If visiting /auth while already authenticated, redirect to appropriate home
-  if (path === "/auth" && user) {
-    const role = user.app_metadata?.role || "customer";
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = role === "mechanic" ? "/mechanic/queue" : "/dashboard";
-    return NextResponse.redirect(redirectUrl);
+  if (user) {
+    // Read role from public.users (not user_metadata)
+    let role: "customer" | "mechanic" = "customer";
+    try {
+      const { data: dbUser } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (dbUser?.role === "mechanic") {
+        role = "mechanic";
+      } else if (dbUser?.role === "customer") {
+        role = "customer";
+      } else if (user.app_metadata?.role === "mechanic") {
+        role = "mechanic";
+      }
+    } catch {
+      if (user.app_metadata?.role === "mechanic") {
+        role = "mechanic";
+      }
+    }
+
+    // Role-based redirects for authenticated users:
+    // 1. Mechanics who open customer-only pages (/dashboard, /book, /vehicles/*) -> /mechanic/queue
+    const isCustomerOnly =
+      path.startsWith("/dashboard") ||
+      path.startsWith("/book") ||
+      path.startsWith("/vehicles");
+
+    if (role === "mechanic" && isCustomerOnly) {
+      return createRedirectResponse("/mechanic/queue");
+    }
+
+    // 2. Non-mechanics who open /mechanic/* -> /dashboard
+    if (role !== "mechanic" && path.startsWith("/mechanic")) {
+      return createRedirectResponse("/dashboard");
+    }
+
+    // 3. Authenticated user visiting /auth -> respective home
+    if (path === "/auth") {
+      return createRedirectResponse(role === "mechanic" ? "/mechanic/queue" : "/dashboard");
+    }
   }
 
   return response;
