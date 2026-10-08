@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { authFetch } from "@/lib/auth-fetch";
 import { CalendarPlus, ArrowLeft, Car, Plus, Loader2 } from "lucide-react";
 
 function BookServiceContent() {
@@ -35,7 +36,11 @@ function BookServiceContent() {
     async function loadVehicles() {
       setIsLoadingVehicles(true);
       try {
-        const res = await fetch("/api/vehicles");
+        const res = await authFetch("/api/vehicles");
+        if (res.status === 401) {
+          router.push("/auth");
+          return;
+        }
         if (res.status === 403) {
           router.push("/mechanic/queue");
           return;
@@ -83,7 +88,7 @@ function BookServiceContent() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/requests", {
+      const res = await authFetch("/api/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

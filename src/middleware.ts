@@ -2,6 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+
+  // Safeguard: Never run middleware logic on API or static asset requests
+  if (path.startsWith("/api/") || path.startsWith("/_next/")) {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -17,6 +24,7 @@ export async function middleware(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
+        // Both request and response cookies must be updated to prevent stale cookie races
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
@@ -35,9 +43,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-
-  // Helper to carry updated cookies over on redirect
+  // Helper to carry cookies over onto redirect responses
   const createRedirectResponse = (targetPath: string) => {
     const url = request.nextUrl.clone();
     url.pathname = targetPath;
@@ -70,29 +76,71 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user) {
-    // Read role from public.users (not user_metadata)
+    // Query public.users for the role at most once per page navigation.
+    // Distinguish:
+    // 1. Row missing -> default to "customer" (not an error).
+    // 2. Query error / timeout -> retry once; if failed, return retry state with HTTP 503.
+    // 3. Success -> read role.
     let role: "customer" | "mechanic" = "customer";
-    try {
-      const { data: dbUser } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+    let fetchErrorOccurred = false;
 
-      if (dbUser?.role === "mechanic") {
-        role = "mechanic";
-      } else if (dbUser?.role === "customer") {
-        role = "customer";
-      } else if (user.app_metadata?.role === "mechanic") {
-        role = "mechanic";
-      }
-    } catch {
-      if (user.app_metadata?.role === "mechanic") {
-        role = "mechanic";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { data: dbUser, error: queryError } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (queryError) {
+          if (attempt === 0) continue; // retry once
+          fetchErrorOccurred = true;
+          break;
+        }
+
+        if (!dbUser) {
+          // Row missing in public.users: default to customer, not an error
+          role = "customer";
+          fetchErrorOccurred = false;
+          break;
+        }
+
+        role = dbUser.role === "mechanic" ? "mechanic" : "customer";
+        fetchErrorOccurred = false;
+        break;
+      } catch {
+        if (attempt === 0) continue; // retry once
+        fetchErrorOccurred = true;
+        break;
       }
     }
 
-    // Role-based redirects for authenticated users:
+    if (fetchErrorOccurred) {
+      const retryHtml = `<!DOCTYPE html>
+<html>
+<head><title>Service Temporarily Unavailable</title><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #f9fafb; color: #111827;">
+  <div style="background: white; padding: 2rem; border-radius: 0.75rem; border: 1px solid #e5e7eb; max-width: 24rem; width: 90%; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Service Temporarily Unavailable</h2>
+    <p style="font-size: 0.875rem; color: #6b7280; margin-bottom: 1.5rem;">We couldn't verify your account session. Please try again.</p>
+    <button onclick="window.location.reload()" style="background-color: #2563eb; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; font-weight: 500; cursor: pointer; font-size: 0.875rem;">Retry</button>
+  </div>
+</body>
+</html>`;
+      const retryResponse = new NextResponse(retryHtml, {
+        status: 503,
+        headers: {
+          "Content-Type": "text/html",
+          "Retry-After": "2",
+        },
+      });
+      response.cookies.getAll().forEach((c) => {
+        retryResponse.cookies.set(c.name, c.value);
+      });
+      return retryResponse;
+    }
+
+    // Role-based redirects:
     // 1. Mechanics who open customer-only pages (/dashboard, /book, /vehicles/*) -> /mechanic/queue
     const isCustomerOnly =
       path.startsWith("/dashboard") ||
@@ -118,7 +166,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Restrict matcher to page routes only: exclude api, _next, and static files
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

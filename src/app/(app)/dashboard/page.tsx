@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CardSkeleton, StepperSkeleton } from "@/components/loading-skeleton";
 import { ErrorState } from "@/components/error-state";
+import { authFetch } from "@/lib/auth-fetch";
 import { Car, Plus, CalendarPlus, ClipboardList, AlertCircle } from "lucide-react";
 
 export default function CustomerDashboardPage() {
@@ -28,8 +29,8 @@ export default function CustomerDashboardPage() {
     setError(null);
     try {
       const [vehiclesRes, requestsRes] = await Promise.all([
-        fetch("/api/vehicles"),
-        fetch("/api/requests"),
+        authFetch("/api/vehicles"),
+        authFetch("/api/requests"),
       ]);
 
       if (vehiclesRes.status === 401 || requestsRes.status === 401) {
@@ -72,7 +73,7 @@ export default function CustomerDashboardPage() {
     setDeletingId(id);
     setActionNotice(null);
     try {
-      const res = await fetch(`/api/vehicles/${id}`, {
+      const res = await authFetch(`/api/vehicles/${id}`, {
         method: "DELETE",
       });
 

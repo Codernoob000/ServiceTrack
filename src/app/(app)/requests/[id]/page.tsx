@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/error-state";
+import { authFetch } from "@/lib/auth-fetch";
 import {
   ArrowLeft,
   Calendar,
@@ -37,7 +38,7 @@ export default function RequestDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/requests");
+      const res = await authFetch("/api/requests");
       if (!res.ok) throw new Error("Failed to load requests.");
       const data = await res.json();
       const match = (data.requests || []).find((r: ServiceRequest) => r.id === id);
@@ -66,7 +67,7 @@ export default function RequestDetailPage() {
 
     setIsCancelling(true);
     try {
-      const res = await fetch(`/api/requests/${id}/transition`, {
+      const res = await authFetch(`/api/requests/${id}/transition`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "cancel" }),

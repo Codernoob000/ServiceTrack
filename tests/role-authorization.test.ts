@@ -2,10 +2,12 @@
  * End-to-end role authorization tests against the live Supabase instance.
  * Validates:
  * 1. Customer calling claim returns 403 and mechanic_id stays null.
- * 2. Customer GET on /mechanic/queue redirects to /dashboard.
- * 3. Mechanic POST to /api/vehicles returns 403.
- * 4. Mechanic POST to /api/requests returns 403.
- * 5. Customer calling transition on unauthorized request returns 403.
+ * 2. Mechanic 2 claims a request already claimed by mechanic 1, expecting 409 with mechanic_id unchanged.
+ * 3. Five parallel authenticated GETs to /api/requests all return 200 without race conditions.
+ * 4. Customer GET on /mechanic/queue redirects to /dashboard.
+ * 5. Mechanic POST to /api/vehicles returns 403.
+ * 6. Mechanic POST to /api/requests returns 403.
+ * 7. Mechanic GET on customer-only pages (/dashboard, /book) redirects to /mechanic/queue.
  */
 
 import { describe, it, before, after } from "node:test";
@@ -49,12 +51,13 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
   const cleanupRequestIds: string[] = [];
 
   let customerUser: { id: string; email: string; cookie: string };
-  let mechanicUser: { id: string; email: string; cookie: string };
+  let mechanicUser1: { id: string; email: string; cookie: string };
+  let mechanicUser2: { id: string; email: string; cookie: string };
   let testVehicleId: string;
   let testRequestId: string;
 
   async function createTestUser(role: "customer" | "mechanic") {
-    const timestamp = Date.now() + Math.floor(Math.random() * 10000);
+    const timestamp = Date.now() + Math.floor(Math.random() * 100000);
     const email = `test_${role}_${timestamp}@example.com`;
     const password = "Password123!";
 
@@ -126,8 +129,9 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     // 1. Create a verified customer user
     customerUser = await createTestUser("customer");
 
-    // 2. Create a verified mechanic user
-    mechanicUser = await createTestUser("mechanic");
+    // 2. Create two verified mechanic users for contention tests
+    mechanicUser1 = await createTestUser("mechanic");
+    mechanicUser2 = await createTestUser("mechanic");
 
     // 3. Create a test vehicle owned by customer
     const { data: vehicle, error: vehicleErr } = await admin
@@ -183,7 +187,7 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     }
   });
 
-  it("customer calling claim returns 403 and mechanic_id stays null", async () => {
+  it("a customer calling claim returns 403 and mechanic_id stays null", async () => {
     const res = await fetch(`${baseUrl}/api/requests/${testRequestId}/claim`, {
       method: "POST",
       headers: {
@@ -206,6 +210,76 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     assert.strictEqual(fetchError, null);
     assert.strictEqual(updatedReq.mechanic_id, null, "mechanic_id must remain null");
     assert.strictEqual(updatedReq.status, "booked", "status must remain 'booked'");
+  });
+
+  it("mechanic 2 claims a request already claimed by mechanic 1, expecting 409 with mechanic_id unchanged", async () => {
+    // 1. Mechanic 1 claims the unassigned request
+    const res1 = await fetch(`${baseUrl}/api/requests/${testRequestId}/claim`, {
+      method: "POST",
+      headers: {
+        Cookie: mechanicUser1.cookie,
+        "Content-Type": "application/json",
+      },
+    });
+
+    assert.strictEqual(res1.status, 200, `Expected mechanic 1 claim to succeed with 200, got ${res1.status}`);
+
+    // Verify request is assigned to mechanic 1
+    const { data: reqAfterM1 } = await admin
+      .from("requests")
+      .select("mechanic_id, status")
+      .eq("id", testRequestId)
+      .single();
+
+    assert.strictEqual(reqAfterM1?.mechanic_id, mechanicUser1.id, "mechanic_id must be assigned to mechanic 1");
+    assert.strictEqual(reqAfterM1?.status, "inspecting", "status must be inspecting");
+
+    // 2. Mechanic 2 attempts to claim the same request (stale-page scenario)
+    const res2 = await fetch(`${baseUrl}/api/requests/${testRequestId}/claim`, {
+      method: "POST",
+      headers: {
+        Cookie: mechanicUser2.cookie,
+        "Content-Type": "application/json",
+      },
+    });
+
+    assert.strictEqual(res2.status, 409, `Expected mechanic 2 claim to return 409, got ${res2.status}`);
+    const json2 = await res2.json();
+    assert.match(json2.error, /already been claimed|no longer available|another mechanic/i);
+
+    // 3. Confirm mechanic_id remains assigned to mechanic 1 (unchanged)
+    const { data: reqAfterM2 } = await admin
+      .from("requests")
+      .select("mechanic_id, status")
+      .eq("id", testRequestId)
+      .single();
+
+    assert.strictEqual(reqAfterM2?.mechanic_id, mechanicUser1.id, "mechanic_id must remain unchanged as mechanic 1");
+    assert.strictEqual(reqAfterM2?.status, "inspecting");
+  });
+
+  it("five parallel authenticated GETs to /api/requests all return 200", async () => {
+    const promises = Array.from({ length: 5 }, () =>
+      fetch(`${baseUrl}/api/requests`, {
+        method: "GET",
+        headers: {
+          Cookie: mechanicUser1.cookie,
+        },
+      })
+    );
+
+    const responses = await Promise.all(promises);
+
+    for (let i = 0; i < responses.length; i++) {
+      const res = responses[i];
+      assert.strictEqual(
+        res.status,
+        200,
+        `Parallel request #${i + 1} failed with status ${res.status}`
+      );
+      const data = await res.json();
+      assert.ok(Array.isArray(data.requests), `Parallel request #${i + 1} did not return requests array`);
+    }
   });
 
   it("customer GET on /mechanic/queue redirects to /dashboard", async () => {
@@ -232,7 +306,7 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     const res = await fetch(`${baseUrl}/api/vehicles`, {
       method: "POST",
       headers: {
-        Cookie: mechanicUser.cookie,
+        Cookie: mechanicUser1.cookie,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -260,7 +334,7 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     const res = await fetch(`${baseUrl}/api/requests`, {
       method: "POST",
       headers: {
-        Cookie: mechanicUser.cookie,
+        Cookie: mechanicUser1.cookie,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -280,7 +354,7 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     const resDashboard = await fetch(`${baseUrl}/dashboard`, {
       method: "GET",
       headers: {
-        Cookie: mechanicUser.cookie,
+        Cookie: mechanicUser1.cookie,
       },
       redirect: "manual",
     });
@@ -291,7 +365,7 @@ describe("Live Supabase Role Authorization & Route Guards", () => {
     const resBook = await fetch(`${baseUrl}/book`, {
       method: "GET",
       headers: {
-        Cookie: mechanicUser.cookie,
+        Cookie: mechanicUser1.cookie,
       },
       redirect: "manual",
     });

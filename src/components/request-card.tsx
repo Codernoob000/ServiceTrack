@@ -15,6 +15,7 @@ interface RequestCardProps {
   role?: "customer" | "mechanic";
   onClaim?: (id: string) => void;
   isClaiming?: boolean;
+  claimError?: string | null;
 }
 
 export function RequestCard({
@@ -22,6 +23,7 @@ export function RequestCard({
   role = "customer",
   onClaim,
   isClaiming,
+  claimError,
 }: RequestCardProps) {
   const serviceLabel = SERVICE_TYPE_LABELS[request.service_type] || request.service_type;
   const vehicle = request.vehicle;
@@ -64,18 +66,25 @@ export function RequestCard({
           &ldquo;{request.complaint}&rdquo;
         </p>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 self-end sm:self-auto">
           {role === "mechanic" && !request.mechanic_id && request.status === "booked" && onClaim ? (
-            <Button
-              variant="primary"
-              size="sm"
-              isLoading={isClaiming}
-              onClick={() => onClaim(request.id)}
-              className="gap-1.5 text-xs"
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              Claim this job
-            </Button>
+            <div className="flex flex-col items-end sm:items-start gap-1">
+              <Button
+                variant="primary"
+                size="sm"
+                isLoading={isClaiming}
+                onClick={() => onClaim(request.id)}
+                className="gap-1.5 text-xs"
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Claim this job
+              </Button>
+              {claimError ? (
+                <span className="text-[11px] text-red-600 font-medium" role="alert">
+                  {claimError}
+                </span>
+              ) : null}
+            </div>
           ) : null}
 
           <Link href={`/requests/${request.id}`}>

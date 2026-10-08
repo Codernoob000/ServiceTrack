@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { authFetch } from "@/lib/auth-fetch";
 import { ArrowLeft, Car } from "lucide-react";
 
 export default function NewVehiclePage() {
@@ -26,7 +27,7 @@ export default function NewVehiclePage() {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch("/api/vehicles", {
+      const res = await authFetch("/api/vehicles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ServiceRequest } from "@/lib/types";
+import { authFetch } from "@/lib/auth-fetch";
 import { RequestCard } from "@/components/request-card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/empty-state";
@@ -20,6 +21,7 @@ export default function MechanicQueuePage() {
   const [error, setError] = React.useState<string | null>(null);
 
   const [claimingId, setClaimingId] = React.useState<string | null>(null);
+  const [claimErrors, setClaimErrors] = React.useState<Record<string, string>>({});
   const [bannerNotice, setBannerNotice] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadQueue = React.useCallback(async () => {
@@ -27,18 +29,19 @@ export default function MechanicQueuePage() {
     setError(null);
     try {
       const [openRes, assignedRes] = await Promise.all([
-        fetch("/api/requests?filter=open"),
-        fetch("/api/requests?filter=assigned"),
+        authFetch("/api/requests?filter=open"),
+        authFetch("/api/requests?filter=assigned"),
       ]);
 
       if (openRes.status === 401 || assignedRes.status === 401) {
+        // After retry failed, redirect to /auth
         router.push("/auth");
         return;
       }
 
       if (openRes.status === 403 || assignedRes.status === 403) {
-        // Customer trying to access mechanic queue
-        router.push("/dashboard");
+        // Never redirect a signed-in mechanic to /dashboard
+        setError("Access denied: You do not have permission to view this queue.");
         return;
       }
 
@@ -65,20 +68,42 @@ export default function MechanicQueuePage() {
 
   async function handleClaim(id: string) {
     setClaimingId(id);
+    setClaimErrors((prev) => ({ ...prev, [id]: "" }));
     setBannerNotice(null);
 
     try {
-      const res = await fetch(`/api/requests/${id}/claim`, {
+      const res = await authFetch(`/api/requests/${id}/claim`, {
         method: "POST",
       });
+
+      if (res.status === 409) {
+        // Inline message for 409 without navigating, and refresh the queue
+        setClaimErrors((prev) => ({
+          ...prev,
+          [id]: "Already claimed by another mechanic",
+        }));
+        setClaimingId(null);
+        await loadQueue();
+        return;
+      }
+
+      if (res.status === 401) {
+        // Inline message for 401 without navigating
+        setClaimErrors((prev) => ({
+          ...prev,
+          [id]: "Session expired, please sign in again",
+        }));
+        setClaimingId(null);
+        return;
+      }
 
       const data = await res.json();
 
       if (!res.ok) {
-        setBannerNotice({
-          type: "error",
-          text: data.error || "Failed to claim request. It may have already been claimed.",
-        });
+        setClaimErrors((prev) => ({
+          ...prev,
+          [id]: data.error || "Failed to claim request.",
+        }));
         setClaimingId(null);
         await loadQueue();
         return;
@@ -94,7 +119,10 @@ export default function MechanicQueuePage() {
       setActiveTab("assigned");
     } catch (err) {
       console.error("Claim error:", err);
-      setBannerNotice({ type: "error", text: "Network error while claiming request." });
+      setClaimErrors((prev) => ({
+        ...prev,
+        [id]: "Network error while claiming request.",
+      }));
     } finally {
       setClaimingId(null);
     }
@@ -175,6 +203,7 @@ export default function MechanicQueuePage() {
                 role="mechanic"
                 onClaim={handleClaim}
                 isClaiming={claimingId === req.id}
+                claimError={claimErrors[req.id]}
               />
             ))
           )}
