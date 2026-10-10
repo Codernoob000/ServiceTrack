@@ -273,29 +273,41 @@ export default function RequestDetailPage() {
           <span>{isMechanic ? "Back to queue" : "Back to dashboard"}</span>
         </Link>
 
-        {canCancel && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowConfirmCancel(true)}
-            className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            <span>Cancel service</span>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {(request.status === "repairing" || request.status === "done") && (
+            <Link
+              href={`/requests/${id}/invoice`}
+              className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-800 min-h-[44px]"
+            >
+              <FileText className="w-3.5 h-3.5 text-gray-600" />
+              <span>View Invoice</span>
+            </Link>
+          )}
 
-        {canRelease && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowConfirmRelease(true)}
-            className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Release job</span>
-          </Button>
-        )}
+          {canCancel && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowConfirmCancel(true)}
+              className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Cancel service</span>
+            </Button>
+          )}
+
+          {canRelease && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowConfirmRelease(true)}
+              className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Release job</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog

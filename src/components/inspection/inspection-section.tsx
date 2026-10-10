@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ServiceImage, PinWithItem, ViewAngle, Severity } from "@/lib/types";
 import { compressImage } from "@/lib/image-compress";
 import { authFetch } from "@/lib/auth-fetch";
@@ -17,6 +18,7 @@ import {
   AlertCircle,
   Clock,
   Plus,
+  FileText,
 } from "lucide-react";
 
 const ANGLES: { value: ViewAngle; label: string }[] = [
@@ -98,6 +100,12 @@ export function InspectionSection({
   const [isSubmittingReport, setIsSubmittingReport] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
+  // Customer decisions state (Phase 3)
+  const [decisions, setDecisions] = React.useState<Record<string, "approved" | "rejected">>({});
+  const [showConfirmDecisions, setShowConfirmDecisions] = React.useState(false);
+  const [isSubmittingDecisions, setIsSubmittingDecisions] = React.useState(false);
+  const [decisionsError, setDecisionsError] = React.useState<string | null>(null);
+
   const isCustomer = userRole === "customer";
   const isMechanic = userRole === "mechanic";
   const isInspecting = status === "inspecting";
@@ -143,6 +151,19 @@ export function InspectionSection({
       if (onImagesCountChange) {
         onImagesCountChange(loadedImages.length);
       }
+
+      // Pre-populate decisions from existing approval_status
+      const existingDecisions: Record<string, "approved" | "rejected"> = {};
+      loadedPins.forEach((p) => {
+        if (
+          p.repair_item?.id &&
+          (p.repair_item.approval_status === "approved" ||
+            p.repair_item.approval_status === "rejected")
+        ) {
+          existingDecisions[p.repair_item.id] = p.repair_item.approval_status as "approved" | "rejected";
+        }
+      });
+      setDecisions((prev) => ({ ...existingDecisions, ...prev }));
 
       // Default selected image to first image in active angle or first available
       const matchingImg = loadedImages.find((img) => img.view_angle === activeAngle);
@@ -194,6 +215,43 @@ export function InspectionSection({
   const totalEstimate = React.useMemo(() => {
     return pins.reduce((sum, p) => sum + (p.repair_item?.estimate || 0), 0);
   }, [pins]);
+
+  // Valid repair items for decisions
+  const repairItems = React.useMemo(() => {
+    return pins
+      .map((p) => p.repair_item)
+      .filter((item): item is NonNullable<typeof item> => Boolean(item && item.id));
+  }, [pins]);
+
+  const decidedCount = React.useMemo(() => {
+    return repairItems.filter((item) => Boolean(decisions[item.id])).length;
+  }, [repairItems, decisions]);
+
+  const allDecided = repairItems.length > 0 && decidedCount === repairItems.length;
+
+  const liveApprovedTotal = React.useMemo(() => {
+    return repairItems
+      .filter((item) => decisions[item.id] === "approved")
+      .reduce((sum, item) => sum + (item.estimate || 0), 0);
+  }, [repairItems, decisions]);
+
+  const approvedCount = React.useMemo(() => {
+    return repairItems.filter((item) => decisions[item.id] === "approved").length;
+  }, [repairItems, decisions]);
+
+  const rejectedCount = React.useMemo(() => {
+    return repairItems.filter((item) => decisions[item.id] === "rejected").length;
+  }, [repairItems, decisions]);
+
+  const finalizedApprovedTotal = React.useMemo(() => {
+    return repairItems
+      .filter((item) => item.approval_status === "approved")
+      .reduce((sum, item) => sum + (item.estimate || 0), 0);
+  }, [repairItems]);
+
+  const finalizedApprovedCount = React.useMemo(() => {
+    return repairItems.filter((item) => item.approval_status === "approved").length;
+  }, [repairItems]);
 
   // When changing tab, adjust selected image to one matching the tab
   function handleSelectAngle(angle: ViewAngle) {
@@ -414,6 +472,40 @@ export function InspectionSection({
       setSubmitError(msg);
     } finally {
       setIsSubmittingReport(false);
+    }
+  }
+
+  // Handle Customer Submit Decisions (Phase 3)
+  async function handleSubmitDecisionsConfirm() {
+    setIsSubmittingDecisions(true);
+    setDecisionsError(null);
+    try {
+      const payload = {
+        decisions: repairItems.map((item) => ({
+          item_id: item.id,
+          decision: decisions[item.id],
+        })),
+      };
+
+      const res = await authFetch(`/api/requests/${requestId}/decisions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to submit decisions.");
+      }
+
+      setShowConfirmDecisions(false);
+      onRequestUpdated();
+      await loadInspectionData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error submitting decisions.";
+      setDecisionsError(msg);
+    } finally {
+      setIsSubmittingDecisions(false);
     }
   }
 
@@ -731,23 +823,70 @@ export function InspectionSection({
                     )}
                   </div>
 
-                  <div className="flex sm:flex-col items-center sm:items-end justify-between pl-8 sm:pl-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                    <span className="text-xs text-gray-500">Estimate</span>
-                    <span className="text-sm font-bold text-gray-900">
-                      ₹{(pin.repair_item?.estimate || 0).toLocaleString("en-IN")}
-                    </span>
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between pl-8 sm:pl-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 gap-2">
+                    <div className="text-left sm:text-right">
+                      <span className="text-[11px] text-gray-500 block">Estimate</span>
+                      <span className="text-sm font-bold text-gray-900">
+                        ₹{(pin.repair_item?.estimate || 0).toLocaleString("en-IN")}
+                      </span>
+                    </div>
 
-                    {!isReadOnly && (
+                    {!isReadOnly ? (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => handlePinClick(pin)}
-                        className="touch-target text-xs text-[#2563eb] hover:bg-blue-50 mt-1"
+                        className="touch-target text-xs text-[#2563eb] hover:bg-blue-50"
                       >
                         Edit
                       </Button>
-                    )}
+                    ) : isCustomer && status === "awaiting_approval" && pin.repair_item ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "approved" }))
+                          }
+                          className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
+                            decisions[pin.repair_item.id] === "approved"
+                              ? "bg-emerald-600 text-white shadow-sm"
+                              : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          {decisions[pin.repair_item.id] === "approved" ? "Approved" : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "rejected" }))
+                          }
+                          className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
+                            decisions[pin.repair_item.id] === "rejected"
+                              ? "bg-gray-800 text-white shadow-sm"
+                              : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          {decisions[pin.repair_item.id] === "rejected" ? "Rejected" : "Reject"}
+                        </button>
+                      </div>
+                    ) : pin.repair_item ? (
+                      <div className="flex items-center pt-1">
+                        {pin.repair_item.approval_status === "approved" ? (
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 inline-block">
+                            Approved
+                          </span>
+                        ) : pin.repair_item.approval_status === "rejected" ? (
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 border border-gray-300 inline-block">
+                            Rejected
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-300 inline-block">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -756,34 +895,34 @@ export function InspectionSection({
         )}
       </div>
 
-      {/* Summary Bar & Submit Report Button */}
-      <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="grid grid-cols-3 gap-6 w-full sm:w-auto text-left">
-          <div>
-            <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
-              Photos
-            </span>
-            <span className="text-sm font-bold text-gray-900">{images.length} / 10</span>
+      {/* Case 1: Status is inspecting (Mechanic only summary bar) */}
+      {!isReadOnly && (
+        <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="grid grid-cols-3 gap-6 w-full sm:w-auto text-left">
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Photos
+              </span>
+              <span className="text-sm font-bold text-gray-900">{images.length} / 10</span>
+            </div>
+
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Pins
+              </span>
+              <span className="text-sm font-bold text-gray-900">{pins.length}</span>
+            </div>
+
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Total Estimate
+              </span>
+              <span className="text-sm font-bold text-[#2563eb]">
+                ₹{totalEstimate.toLocaleString("en-IN")}
+              </span>
+            </div>
           </div>
 
-          <div>
-            <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
-              Pins
-            </span>
-            <span className="text-sm font-bold text-gray-900">{pins.length}</span>
-          </div>
-
-          <div>
-            <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
-              Total Estimate
-            </span>
-            <span className="text-sm font-bold text-[#2563eb]">
-              ₹{totalEstimate.toLocaleString("en-IN")}
-            </span>
-          </div>
-        </div>
-
-        {!isReadOnly && (
           <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-2">
             {submitError && (
               <span className="text-xs text-red-600 font-medium">{submitError}</span>
@@ -797,8 +936,82 @@ export function InspectionSection({
               Submit Report
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Case 2: Status is repairing or done (Read-only summary + invoice link) */}
+      {(status === "repairing" || status === "done") && (
+        <div className="space-y-3">
+          {finalizedApprovedCount === 0 && (
+            <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 font-medium text-center">
+              No repairs approved. Request marked as completed.
+            </div>
+          )}
+
+          <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Final Approved Total
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-base font-bold text-gray-900">
+                  ₹{finalizedApprovedTotal.toLocaleString("en-IN")}
+                </span>
+                <span className="text-xs text-gray-500">
+                  ({finalizedApprovedCount} approved, {pins.length - finalizedApprovedCount} rejected)
+                </span>
+              </div>
+            </div>
+
+            <Link
+              href={`/requests/${requestId}/invoice`}
+              className="touch-target inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2563eb] text-white hover:bg-blue-700 text-xs font-semibold min-h-[44px]"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>View Printable Invoice</span>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Case 3: Customer in awaiting_approval (Sticky bottom decision bar) */}
+      {isCustomer && status === "awaiting_approval" && (
+        <div className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 p-4 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center justify-between w-full sm:w-auto gap-6">
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Decisions
+              </span>
+              <span className="text-xs font-bold text-gray-900">
+                {decidedCount} / {repairItems.length} decided
+              </span>
+            </div>
+
+            <div>
+              <span className="block text-[11px] text-gray-500 uppercase tracking-wider font-semibold">
+                Live Approved Total
+              </span>
+              <span className="text-base font-bold text-[#2563eb]">
+                ₹{liveApprovedTotal.toLocaleString("en-IN")}
+              </span>
+            </div>
+          </div>
+
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-2">
+            {decisionsError && (
+              <span className="text-xs text-red-600 font-medium">{decisionsError}</span>
+            )}
+            <Button
+              type="button"
+              disabled={!allDecided || isSubmittingDecisions}
+              onClick={() => setShowConfirmDecisions(true)}
+              className="touch-target w-full sm:w-auto bg-[#2563eb] hover:bg-blue-700 text-white text-xs font-semibold px-6 min-h-[44px]"
+            >
+              Submit Decisions
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Pin Bottom Sheet Dialog */}
       <PinBottomSheet
@@ -843,6 +1056,19 @@ export function InspectionSection({
         isLoading={isSubmittingReport}
         onConfirm={handleSubmitReportConfirm}
         onCancel={() => setShowConfirmSubmit(false)}
+      />
+
+      {/* Confirm Customer Decisions Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDecisions}
+        title="Submit Repair Decisions"
+        description={`Submit decisions for all ${repairItems.length} repair item(s)? You have approved ${approvedCount} item(s) totaling ₹${liveApprovedTotal.toLocaleString("en-IN")} and rejected ${rejectedCount} item(s). Once submitted, decisions cannot be changed.`}
+        confirmLabel="Confirm & Submit"
+        cancelLabel="Review decisions"
+        variant="primary"
+        isLoading={isSubmittingDecisions}
+        onConfirm={handleSubmitDecisionsConfirm}
+        onCancel={() => setShowConfirmDecisions(false)}
       />
     </div>
   );

@@ -98,3 +98,14 @@ export const pinUpdateSchema = z.strictObject({
   description: z.string().trim().min(1).max(500).optional(),
   estimate: z.number().int().min(0).max(1000000).optional(),
 });
+
+export const decisionItemSchema = z.strictObject({
+  item_id: z.string().uuid("Invalid item ID"),
+  decision: z.enum(["approved", "rejected"]),
+});
+
+export const submitDecisionsSchema = z.object({
+  decisions: z.array(decisionItemSchema).min(1, "At least one decision is required"),
+  total: z.any().optional(),
+});
+

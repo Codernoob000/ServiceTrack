@@ -37,3 +37,13 @@
   min-height: 44px;
   min-width: 44px;
 }
+
+@media print {
+  header,
+  nav,
+  .no-print,
+  [role="navigation"] {
+    display: none !important;
+  }
+}
+
