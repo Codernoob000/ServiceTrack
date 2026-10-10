@@ -56,9 +56,11 @@ export type ViewAngle = "front" | "rear" | "left" | "right" | "other";
 export interface ServiceImage {
   id: string;
   request_id: string;
-  url: string;
+  storage_path: string;
   view_angle: ViewAngle;
   created_at: string;
+  /** Populated by API responses; not stored in the database. */
+  signed_url?: string;
 }
 
 export type Severity = "low" | "medium" | "high" | "critical";
@@ -85,4 +87,8 @@ export interface RepairItem {
   after_photo_url: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+export interface PinWithItem extends Pin {
+  repair_item: RepairItem;
 }

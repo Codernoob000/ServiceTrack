@@ -73,5 +73,28 @@ export const requestCreateSchema = z.object({
 });
 
 export const requestTransitionSchema = z.object({
-  action: z.enum(["cancel", "release", "start_inspection", "complete"]),
+  action: z.enum(["cancel", "release", "start_inspection", "complete", "submit_report"]),
+});
+
+export const viewAngleSchema = z.enum(["front", "rear", "left", "right", "other"]);
+
+export const pinCreateSchema = z.object({
+  image_id: z.string().uuid("Invalid image ID"),
+  x: z.number().min(0, "x must be >= 0").max(1, "x must be <= 1"),
+  y: z.number().min(0, "y must be >= 0").max(1, "y must be <= 1"),
+  part_name: z.string().trim().min(1, "Part name is required").max(100, "Part name max 100 characters"),
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  notes: z.string().max(1000, "Notes max 1000 characters").optional().nullable(),
+  description: z.string().trim().min(1, "Description is required").max(500, "Description max 500 characters"),
+  estimate: z.number().int("Estimate must be a whole number").min(0, "Estimate must be >= 0").max(1000000, "Estimate max 1,000,000"),
+});
+
+export const pinUpdateSchema = z.strictObject({
+  x: z.number().min(0).max(1).optional(),
+  y: z.number().min(0).max(1).optional(),
+  part_name: z.string().trim().min(1).max(100).optional(),
+  severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+  notes: z.string().max(1000).optional().nullable(),
+  description: z.string().trim().min(1).max(500).optional(),
+  estimate: z.number().int().min(0).max(1000000).optional(),
 });

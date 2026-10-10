@@ -70,3 +70,5 @@ export const SEVERITY_CONFIG: Record<
     borderClass: "border-red-300",
   },
 };
+
+export const SERVICE_IMAGES_BUCKET = "service-images";
