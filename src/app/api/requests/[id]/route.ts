@@ -44,7 +44,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    return NextResponse.json({ request: req });
+    // Fetch mechanic's display name server-side if assigned
+    let mechanicName: string | null = null;
+    if (req.mechanic_id) {
+      const { data: mechanicUser } = await admin
+        .from("users")
+        .select("name")
+        .eq("id", req.mechanic_id)
+        .maybeSingle();
+      if (mechanicUser?.name) {
+        mechanicName = mechanicUser.name;
+      }
+    }
+
+    const responseReq: Record<string, unknown> = {
+      ...req,
+      mechanic: mechanicName ? { name: mechanicName } : null,
+      mechanic_name: mechanicName,
+    };
+
+    // Customers must never see the mechanic's user ID
+    if (profile.role === "customer") {
+      delete responseReq.mechanic_id;
+    }
+
+    return NextResponse.json({ request: responseReq });
   } catch (err) {
     console.error("Request GET by id error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

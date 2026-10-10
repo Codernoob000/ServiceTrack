@@ -49,6 +49,7 @@ export interface ServiceRequest {
   // Joined relation fields
   vehicle?: Vehicle;
   mechanic?: UserProfile | null;
+  mechanic_name?: string | null;
 }
 
 export type ViewAngle = "front" | "rear" | "left" | "right" | "other";

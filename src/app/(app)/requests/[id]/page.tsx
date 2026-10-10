@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/error-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { authFetch } from "@/lib/auth-fetch";
+import { InspectionSection } from "@/components/inspection/inspection-section";
 import {
   ArrowLeft,
   Car,
@@ -34,6 +35,7 @@ export default function RequestDetailPage() {
   const [isNotFound, setIsNotFound] = React.useState(false);
   const [userRole, setUserRole] = React.useState<"customer" | "mechanic" | null>(null);
   const [userId, setUserId] = React.useState<string | null>(null);
+  const [imagesCount, setImagesCount] = React.useState<number | null>(null);
 
   const [isCancelling, setIsCancelling] = React.useState(false);
   const [isReleasing, setIsReleasing] = React.useState(false);
@@ -46,6 +48,9 @@ export default function RequestDetailPage() {
     setError(null);
     setIsNotFound(false);
     try {
+      let activeRole = "customer";
+      let activeUid: string | null = null;
+
       // 1. Fetch current user profile to determine role
       const profileRes = await authFetch("/api/user/profile");
       if (profileRes.status === 401) {
@@ -54,8 +59,10 @@ export default function RequestDetailPage() {
       }
       if (profileRes.ok) {
         const profileData = await profileRes.json();
-        setUserRole(profileData.profile?.role || "customer");
-        setUserId(profileData.user?.id || null);
+        activeRole = profileData.profile?.role || "customer";
+        activeUid = profileData.user?.id || null;
+        setUserRole(activeRole as "customer" | "mechanic");
+        setUserId(activeUid);
       }
 
       // 2. Fetch specific request details
@@ -72,6 +79,23 @@ export default function RequestDetailPage() {
 
       const data = await res.json();
       setRequest(data.request);
+
+      // If assigned mechanic in inspecting, fetch initial imagesCount to determine release eligibility
+      if (
+        activeRole === "mechanic" &&
+        data.request?.status === "inspecting" &&
+        data.request?.mechanic_id === activeUid
+      ) {
+        try {
+          const imgRes = await authFetch(`/api/requests/${id}/images`);
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            setImagesCount(imgData.images?.length ?? 0);
+          }
+        } catch {
+          // synced by InspectionSection
+        }
+      }
     } catch (err) {
       console.error("Load request detail error:", err);
       setError("Unable to load service request details.");
@@ -213,7 +237,8 @@ export default function RequestDetailPage() {
   const isMechanic = userRole === "mechanic";
   const isAssignedMechanic = isMechanic && request.mechanic_id === userId;
   const canCancel = !isMechanic && ["booked", "inspecting", "awaiting_approval"].includes(request.status);
-  const canRelease = isAssignedMechanic && request.status === "inspecting";
+  const canRelease =
+    isAssignedMechanic && request.status === "inspecting" && imagesCount === 0;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -433,12 +458,12 @@ export default function RequestDetailPage() {
               <Wrench className="w-4 h-4 text-gray-500" />
               <span>Assigned Technician</span>
             </div>
-            {request.mechanic_id ? (
+            {request.mechanic?.name || request.mechanic_name || (request.mechanic_id && isMechanic) ? (
               <div className="text-xs space-y-1">
-                <p className="font-medium text-gray-900">Mechanic Assigned</p>
-                <p className="text-gray-500">
-                  Technician ID: <span className="font-mono">{request.mechanic_id.slice(0, 8)}...</span>
+                <p className="font-medium text-gray-900">
+                  {request.mechanic?.name || request.mechanic_name || "Mechanic Assigned"}
                 </p>
+                <p className="text-gray-500">Certified Technician</p>
                 <p className="text-emerald-700 text-[11px] font-medium">Assigned & active</p>
               </div>
             ) : (
@@ -460,6 +485,20 @@ export default function RequestDetailPage() {
             {request.complaint}
           </div>
         </div>
+
+        {/* Phase 2: Inspection Section */}
+        {request.status !== "cancelled" && (
+          <div className="pt-4 border-t border-gray-100">
+            <InspectionSection
+              requestId={request.id}
+              status={request.status}
+              userRole={userRole || "customer"}
+              isAssignedMechanic={isAssignedMechanic}
+              onRequestUpdated={loadData}
+              onImagesCountChange={(count) => setImagesCount(count)}
+            />
+          </div>
+        )}
       </Card>
     </div>
   );
