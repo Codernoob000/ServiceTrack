@@ -36,6 +36,19 @@ function BookServiceContent() {
     async function loadVehicles() {
       setIsLoadingVehicles(true);
       try {
+        const profileRes = await authFetch("/api/user/profile");
+        if (profileRes.status === 401) {
+          router.push("/auth");
+          return;
+        }
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          if (profileData.profile?.role === "mechanic") {
+            router.push("/mechanic/queue");
+            return;
+          }
+        }
+
         const res = await authFetch("/api/vehicles");
         if (res.status === 401) {
           router.push("/auth");

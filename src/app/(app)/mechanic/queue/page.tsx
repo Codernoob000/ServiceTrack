@@ -54,6 +54,20 @@ export default function MechanicQueuePage() {
     setLoading(true);
     setError(null);
     try {
+      // 1. Explicit role check: customers must be redirected to /dashboard
+      const profileRes = await authFetch("/api/user/profile");
+      if (profileRes.status === 401) {
+        router.push("/auth");
+        return;
+      }
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        if (profileData.profile?.role !== "mechanic") {
+          router.push("/dashboard");
+          return;
+        }
+      }
+
       const [openRes, assignedRes] = await Promise.all([
         authFetch("/api/requests?filter=open"),
         authFetch("/api/requests?filter=assigned"),

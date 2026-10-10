@@ -1,9 +1,9 @@
 /**
- * Integration and UI-level tests for Mechanic Queue claim banner notices.
- * Proves:
+ * Component state logic tests (non-browser) for Mechanic Queue claim banner notices.
+ * Plainly checks controller and state machine logic:
  * 1. Banner text "That job was already claimed by another mechanic." appears after a 409.
- * 2. The banner persists after the queue reload completes.
- * 3. The banner renders with role="alert" and error styling.
+ * 2. The banner state persists after the queue reload completes.
+ * 3. The banner template structure includes role="alert" and error styling.
  * 4. The banner survives subsequent queue reloads until dismissed or timeout.
  * 5. On 401, banner displays "Session expired, please sign in again." with sign-in link without navigating.
  */
@@ -40,7 +40,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-describe("Mechanic Queue 409 Claim Banner Persistence", () => {
+describe("Mechanic Queue 409 Claim Banner State Logic (Non-Browser)", () => {
   const admin = createAdminClient(supabaseUrl, serviceRoleKey);
 
   const cleanupUserIds: string[] = [];

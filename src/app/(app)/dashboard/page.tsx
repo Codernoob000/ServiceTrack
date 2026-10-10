@@ -28,6 +28,19 @@ export default function CustomerDashboardPage() {
     setLoading(true);
     setError(null);
     try {
+      const profileRes = await authFetch("/api/user/profile");
+      if (profileRes.status === 401) {
+        router.push("/auth");
+        return;
+      }
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        if (profileData.profile?.role === "mechanic") {
+          router.push("/mechanic/queue");
+          return;
+        }
+      }
+
       const [vehiclesRes, requestsRes] = await Promise.all([
         authFetch("/api/vehicles"),
         authFetch("/api/requests"),
@@ -39,7 +52,6 @@ export default function CustomerDashboardPage() {
       }
 
       if (vehiclesRes.status === 403) {
-        // If logged in as mechanic, redirect to mechanic queue
         router.push("/mechanic/queue");
         return;
       }

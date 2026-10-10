@@ -73,5 +73,5 @@ export const requestCreateSchema = z.object({
 });
 
 export const requestTransitionSchema = z.object({
-  action: z.enum(["cancel"]),
+  action: z.enum(["cancel", "release", "start_inspection", "complete"]),
 });

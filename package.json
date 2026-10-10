@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/cross-user-access.test.ts tests/role-authorization.test.ts tests/mechanic-queue-banner.test.ts"
+    "test": "tsx --test tests/cross-user-access.test.ts tests/role-authorization.test.ts tests/mechanic-queue-banner.test.ts tests/cross-user-live.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -17,6 +17,7 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },

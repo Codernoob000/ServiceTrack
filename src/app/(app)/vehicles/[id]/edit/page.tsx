@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { ErrorState } from "@/components/error-state";
 import { authFetch } from "@/lib/auth-fetch";
 import { ArrowLeft, Car, Loader2 } from "lucide-react";
 
@@ -22,31 +23,57 @@ export default function EditVehiclePage() {
 
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  React.useEffect(() => {
-    async function loadVehicle() {
-      setIsLoading(true);
-      try {
-        const res = await authFetch(`/api/vehicles/${id}`);
-        if (!res.ok) {
-          throw new Error("Vehicle not found.");
-        }
-        const data = await res.json();
-        const v = data.vehicle;
-        setPlate(v.plate);
-        setBrand(v.brand);
-        setModel(v.model);
-        setYear(v.year);
-      } catch (err) {
-        console.error("Load vehicle error:", err);
-        setError("Could not load vehicle details.");
-      } finally {
-        setIsLoading(false);
+  const loadVehicle = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setIsNotFound(false);
+    try {
+      // 1. Check user profile / role directly
+      const profileRes = await authFetch("/api/user/profile");
+      if (profileRes.status === 401) {
+        router.push("/auth");
+        return;
       }
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        if (profileData.profile?.role === "mechanic") {
+          router.push("/mechanic/queue");
+          return;
+        }
+      }
+
+      // 2. Fetch vehicle details
+      const res = await authFetch(`/api/vehicles/${id}`);
+      if (res.status === 403 || res.status === 404) {
+        setIsNotFound(true);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error("Unable to load vehicle details.");
+      }
+
+      const data = await res.json();
+      const v = data.vehicle;
+      setPlate(v.plate);
+      setBrand(v.brand);
+      setModel(v.model);
+      setYear(v.year);
+    } catch (err) {
+      console.error("Load vehicle error:", err);
+      setError("Unable to load vehicle details.");
+    } finally {
+      setIsLoading(false);
     }
+  }, [id, router]);
+
+  React.useEffect(() => {
     if (id) loadVehicle();
-  }, [id]);
+  }, [id, loadVehicle]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,6 +114,41 @@ export default function EditVehiclePage() {
       <div className="max-w-xl mx-auto py-12 flex flex-col items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
         <span className="text-xs text-gray-500 mt-2">Loading vehicle details...</span>
+      </div>
+    );
+  }
+
+  // 403 or 404: Render plain "Not found" page with back link, no Try again button, no empty form
+  if (isNotFound) {
+    return (
+      <div className="max-w-xl mx-auto space-y-4">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to dashboard</span>
+        </Link>
+        <div className="py-12 text-center space-y-2">
+          <h1 className="text-lg font-semibold text-gray-900">Not found</h1>
+          <p className="text-xs text-gray-500">The requested resource could not be found.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 5xx or Network error: Render with Retry button
+  if (error && !plate) {
+    return (
+      <div className="max-w-xl mx-auto space-y-4">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to dashboard</span>
+        </Link>
+        <ErrorState message={error || "Vehicle not found."} onRetry={loadVehicle} />
       </div>
     );
   }
@@ -151,6 +213,7 @@ export default function EditVehiclePage() {
                   id="brand"
                   type="text"
                   required
+                  maxLength={50}
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
                 />
@@ -164,6 +227,7 @@ export default function EditVehiclePage() {
                   id="model"
                   type="text"
                   required
+                  maxLength={50}
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                 />
@@ -172,7 +236,7 @@ export default function EditVehiclePage() {
 
             <div>
               <Label htmlFor="year" required>
-                Manufacturing Year
+                Year
               </Label>
               <Input
                 id="year"
@@ -185,13 +249,13 @@ export default function EditVehiclePage() {
               />
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-3 border-t border-gray-100">
+            <div className="pt-2 flex items-center justify-end gap-3">
               <Link href="/dashboard">
                 <Button type="button" variant="outline" size="sm">
                   Cancel
                 </Button>
               </Link>
-              <Button type="submit" variant="primary" size="sm" isLoading={isSubmitting}>
+              <Button type="submit" size="sm" isLoading={isSubmitting}>
                 Save Changes
               </Button>
             </div>

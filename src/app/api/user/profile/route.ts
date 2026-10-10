@@ -3,6 +3,19 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import { profileUpdateSchema } from "@/lib/validation";
 import { getServiceRoleClient } from "@/lib/supabase/admin";
 
+export async function GET() {
+  try {
+    const { user, profile, error: authError } = await getAuthenticatedUser();
+    if (authError || !user || !profile) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json({ user, profile });
+  } catch (err) {
+    console.error("Profile GET error:", err);
+    return NextResponse.json({ error: "Server error." }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const { user, profile, error: authError } = await getAuthenticatedUser();

@@ -7,10 +7,10 @@
 - **Metadata Sync**: Upon successful invite validation, both `public.users.role` and `auth.users.app_metadata.role` are updated using the `service_role` key.
 - **Client Metadata**: `user_metadata` is never trusted for authorization decisions.
 
-## 2. Row Level Security (RLS) & Access Boundaries
+## 2. Grant Lockdown & Row Level Security (RLS)
+- **Grant Lockdown**: Direct mutation grants (`INSERT`, `UPDATE`, `DELETE`) on `public.vehicles` and `public.requests` are locked down from `anon` and `authenticated` roles. All state mutations must flow through Next.js server-side API routes (`service_role` client) after strict session verification and ownership validation.
+- **RPC Lockdown**: Sensitive RPCs such as `claim_request()` have execution privileges revoked from `anon` and `public`, restricted to `authenticated` or internal callers.
 - **Users Table**: Read-only to the user themselves (`auth.uid() = id`). No direct UPDATE grant on `role` or `email` columns for `authenticated`. Profile updates (name/phone) route through `/api/user/profile`.
-- **Vehicles Table**: Single write path via server API routes. Clients have no direct INSERT/UPDATE/DELETE policies. Server routes validate `user_id`, ownership, and `is_active`. `public_token` and `user_id` are never client-settable.
-- **Requests Table**: Zero client INSERT/UPDATE/DELETE policies. All bookings, claims, and status transitions occur through server API routes with explicit ownership/assignment checks.
 - **Phase 2 Tables (`images`, `pins`, `repair_items`)**: RLS enabled with default-deny.
 - **Cross-User Protection**: Every route using the service-role client explicitly validates ownership, current status, and `is_active` in code before performing database mutations.
 
@@ -34,10 +34,21 @@
 
 ## 6. HTTP & Transport Security
 - Strict HTTP security headers configured in `next.config.ts`:
+  - `Content-Security-Policy`: Restricts scripts, styles, frames (`frame-ancestors 'none'`), objects, and limits `connect-src` to `'self'` and Supabase HTTPS/WSS endpoints.
+  - `Referrer-Policy: strict-origin-when-cross-origin`
   - `X-Frame-Options: DENY`
   - `X-Content-Type-Options: nosniff`
-  - `Referrer-Policy: strict-origin-when-cross-origin`
   - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
   - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 - All API routes validate incoming JSON payloads with Zod schemas.
-- Generic error messages returned to clients to prevent enumeration and leaking stack traces.
+- Server-only modules (`admin.ts`, `auth.ts`, `rate-limit.ts`) enforce `import "server-only"` to prevent secret leaks into client bundles.
+
+## 7. Dev-Only npm Audit Note
+- Running `npm audit` reports a vulnerability in `braces` (via `micromatch` in `eslint-config-next` / ESLint).
+- **Impact Assessment**: This dependency belongs exclusively to `devDependencies` and is executed solely during local developer linting. It is never included in the production runtime, serverless functions, or client-side bundles compiled by Next.js.
+
+## 8. Honest Known Risks & Mitigations
+1. **Direct GoTrue Auth Client Bypass**: Direct calls to `supabase.auth.signUp()` or `signInWithPassword()` from client browsers bypass Next.js API route rate limiters. *Mitigation*: Rate limiting and captcha must be enabled in the Supabase Dashboard under Auth Settings.
+2. **Service Role Key Secrecy**: The service role client bypasses RLS in Postgres. Server routes must enforce explicit authorization and ownership checks before any query. *Mitigation*: The service role key is guarded with `server-only` imports and throws immediately if missing from server environments.
+3. **Public Token Enumeration**: Vehicle status can be tracked via `public_token` UUIDs without authentication. *Mitigation*: UUIDv4 values are cryptographically random and unguessable (128-bit entropy).
+4. **Stale Session Claims**: A user demoted or altered directly in Postgres may retain a valid JWT until the session expires or refreshes. *Mitigation*: Server API routes and route handlers rely on `getAuthenticatedUser()` which queries `public.users` directly as the canonical source of truth on each write request.

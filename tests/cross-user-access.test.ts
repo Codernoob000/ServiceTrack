@@ -1,6 +1,6 @@
 /**
- * Cross-user access and authorization test suite.
- * Validates that write routes reject unauthorized and cross-user attempts.
+ * Schema validation test suite.
+ * Validates Zod request body and parameter schemas.
  * Uses native Node.js test runner (node:test) and assertions (node:assert/strict).
  */
 
@@ -15,7 +15,7 @@ import {
   requestTransitionSchema,
 } from "../src/lib/validation";
 
-describe("Validation and Authorization Contracts", () => {
+describe("Schema validation", () => {
   it("registerSchema rejects invalid role and missing mechanic invite", () => {
     // Mechanic missing invite code
     const res1 = registerSchema.safeParse({

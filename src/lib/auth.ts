@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient } from "./supabase/server";
 import { getServiceRoleClient } from "./supabase/admin";
 import { UserProfile } from "./types";

@@ -7,7 +7,7 @@ import { ServiceRequest } from "@/lib/types";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { StatusStepper } from "@/components/status-stepper";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/error-state";
@@ -15,14 +15,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { authFetch } from "@/lib/auth-fetch";
 import {
   ArrowLeft,
-  Calendar,
   Car,
   Wrench,
-  Clock,
-  AlertCircle,
   XCircle,
   FileText,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 
 export default function RequestDetailPage() {
@@ -33,35 +31,58 @@ export default function RequestDetailPage() {
   const [request, setRequest] = React.useState<ServiceRequest | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = React.useState(false);
+  const [userRole, setUserRole] = React.useState<"customer" | "mechanic" | null>(null);
+  const [userId, setUserId] = React.useState<string | null>(null);
+
   const [isCancelling, setIsCancelling] = React.useState(false);
+  const [isReleasing, setIsReleasing] = React.useState(false);
   const [showConfirmCancel, setShowConfirmCancel] = React.useState(false);
+  const [showConfirmRelease, setShowConfirmRelease] = React.useState(false);
   const [actionNotice, setActionNotice] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const loadRequest = React.useCallback(async () => {
+  const loadData = React.useCallback(async () => {
     setLoading(true);
     setError(null);
+    setIsNotFound(false);
     try {
-      const res = await authFetch("/api/requests");
-      if (!res.ok) throw new Error("Failed to load requests.");
-      const data = await res.json();
-      const match = (data.requests || []).find((r: ServiceRequest) => r.id === id);
-
-      if (!match) {
-        throw new Error("Service request not found or access denied.");
+      // 1. Fetch current user profile to determine role
+      const profileRes = await authFetch("/api/user/profile");
+      if (profileRes.status === 401) {
+        router.push("/auth");
+        return;
+      }
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        setUserRole(profileData.profile?.role || "customer");
+        setUserId(profileData.user?.id || null);
       }
 
-      setRequest(match);
+      // 2. Fetch specific request details
+      const res = await authFetch(`/api/requests/${id}`);
+      if (res.status === 403 || res.status === 404) {
+        setIsNotFound(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error("Unable to load service request details.");
+      }
+
+      const data = await res.json();
+      setRequest(data.request);
     } catch (err) {
       console.error("Load request detail error:", err);
       setError("Unable to load service request details.");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, router]);
 
   React.useEffect(() => {
-    if (id) loadRequest();
-  }, [id, loadRequest]);
+    if (id) loadData();
+  }, [id, loadData]);
 
   async function handleConfirmCancel() {
     setIsCancelling(true);
@@ -90,7 +111,7 @@ export default function RequestDetailPage() {
         text: "Service request cancelled successfully.",
       });
       setShowConfirmCancel(false);
-      await loadRequest();
+      await loadData();
     } catch (err) {
       console.error("Cancel request error:", err);
       setActionNotice({
@@ -103,6 +124,46 @@ export default function RequestDetailPage() {
     }
   }
 
+  async function handleConfirmRelease() {
+    setIsReleasing(true);
+    setActionNotice(null);
+    try {
+      const res = await authFetch(`/api/requests/${id}/transition`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release" }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setActionNotice({
+          type: "error",
+          text: data.error || "Failed to release job.",
+        });
+        setShowConfirmRelease(false);
+        setIsReleasing(false);
+        return;
+      }
+
+      setActionNotice({
+        type: "success",
+        text: "Job released back to queue successfully.",
+      });
+      setShowConfirmRelease(false);
+      await loadData();
+    } catch (err) {
+      console.error("Release job error:", err);
+      setActionNotice({
+        type: "error",
+        text: "An error occurred while releasing the job.",
+      });
+      setShowConfirmRelease(false);
+    } finally {
+      setIsReleasing(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto py-12 flex flex-col items-center justify-center">
@@ -112,6 +173,26 @@ export default function RequestDetailPage() {
     );
   }
 
+  // 403 or 404: Render plain "Not found" page with back link, no Try again button, no empty form
+  if (isNotFound) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-4">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to dashboard</span>
+        </Link>
+        <div className="py-12 text-center space-y-2">
+          <h1 className="text-lg font-semibold text-gray-900">Not found</h1>
+          <p className="text-xs text-gray-500">The requested resource could not be found.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 5xx or Network error: Render with Retry button
   if (error || !request) {
     return (
       <div className="max-w-3xl mx-auto space-y-4">
@@ -122,14 +203,17 @@ export default function RequestDetailPage() {
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to dashboard</span>
         </Link>
-        <ErrorState message={error || "Service request not found."} onRetry={loadRequest} />
+        <ErrorState message={error || "Service request not found."} onRetry={loadData} />
       </div>
     );
   }
 
   const vehicle = request.vehicle;
   const serviceLabel = SERVICE_TYPE_LABELS[request.service_type] || request.service_type;
-  const canCancel = ["booked", "inspecting", "awaiting_approval"].includes(request.status);
+  const isMechanic = userRole === "mechanic";
+  const isAssignedMechanic = isMechanic && request.mechanic_id === userId;
+  const canCancel = !isMechanic && ["booked", "inspecting", "awaiting_approval"].includes(request.status);
+  const canRelease = isAssignedMechanic && request.status === "inspecting";
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -154,14 +238,14 @@ export default function RequestDetailPage() {
         </div>
       )}
 
-      {/* Back button and cancel action */}
+      {/* Back button and actions */}
       <div className="flex items-center justify-between">
         <Link
-          href="/dashboard"
+          href={isMechanic ? "/mechanic/queue" : "/dashboard"}
           className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to dashboard</span>
+          <span>{isMechanic ? "Back to queue" : "Back to dashboard"}</span>
         </Link>
 
         {canCancel && (
@@ -173,6 +257,18 @@ export default function RequestDetailPage() {
           >
             <XCircle className="w-3.5 h-3.5" />
             <span>Cancel service</span>
+          </Button>
+        )}
+
+        {canRelease && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowConfirmRelease(true)}
+            className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Release job</span>
           </Button>
         )}
       </div>
@@ -187,6 +283,18 @@ export default function RequestDetailPage() {
         isLoading={isCancelling}
         onConfirm={handleConfirmCancel}
         onCancel={() => setShowConfirmCancel(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={showConfirmRelease}
+        title="Release Job to Queue"
+        description="Release this job back to the open queue? Another mechanic will be able to claim it."
+        confirmLabel="Yes, release job"
+        cancelLabel="Keep job"
+        variant="primary"
+        isLoading={isReleasing}
+        onConfirm={handleConfirmRelease}
+        onCancel={() => setShowConfirmRelease(false)}
       />
 
       {/* Main card */}
@@ -220,35 +328,72 @@ export default function RequestDetailPage() {
 
         {/* Stage Status Description */}
         <div className="p-3.5 rounded-lg border border-gray-200 bg-gray-50/70 text-xs text-gray-700">
-          {request.status === "booked" && (
-            <p>
-              <strong className="text-gray-900">Service booked.</strong> Your appointment is registered. A certified technician will claim the ticket and begin vehicle inspection.
-            </p>
-          )}
-          {request.status === "inspecting" && (
-            <p>
-              <strong className="text-gray-900">Inspection in progress.</strong> The mechanic is reviewing the vehicle, dropping pin coordinates on inspection photos, and estimating repair costs.
-            </p>
-          )}
-          {request.status === "awaiting_approval" && (
-            <p>
-              <strong className="text-gray-900">Inspection report ready.</strong> The mechanic has submitted findings. Please review each repair item and make your approval decisions.
-            </p>
-          )}
-          {request.status === "repairing" && (
-            <p>
-              <strong className="text-gray-900">Repairs authorized.</strong> Mechanic is completing work on all approved repair items.
-            </p>
-          )}
-          {request.status === "done" && (
-            <p>
-              <strong className="text-gray-900">Service completed.</strong> All approved repair items have verified proof-of-repair photos and inspection records.
-            </p>
-          )}
-          {request.status === "cancelled" && (
-            <p className="text-red-700">
-              <strong className="text-red-900">Service cancelled.</strong> This request was cancelled before repairs started.
-            </p>
+          {isMechanic ? (
+            <>
+              {request.status === "booked" && (
+                <p>
+                  <strong className="text-gray-900">Unassigned ticket.</strong> This job is waiting in the open queue for a mechanic to claim.
+                </p>
+              )}
+              {request.status === "inspecting" && (
+                <p>
+                  <strong className="text-gray-900">Vehicle in inspection.</strong> Document vehicle condition and estimate required repair items.
+                </p>
+              )}
+              {request.status === "awaiting_approval" && (
+                <p>
+                  <strong className="text-gray-900">Awaiting customer authorization.</strong> Inspection findings submitted. Waiting for customer approval.
+                </p>
+              )}
+              {request.status === "repairing" && (
+                <p>
+                  <strong className="text-gray-900">Repairs authorized.</strong> Perform repairs and capture completion verification photos.
+                </p>
+              )}
+              {request.status === "done" && (
+                <p>
+                  <strong className="text-gray-900">Service completed.</strong> All approved repair work is finalized and documented.
+                </p>
+              )}
+              {request.status === "cancelled" && (
+                <p className="text-red-700">
+                  <strong className="text-red-900">Service cancelled.</strong> This request was cancelled by the customer.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              {request.status === "booked" && (
+                <p>
+                  <strong className="text-gray-900">Service booked.</strong> Your appointment is registered. A certified technician will claim the ticket and begin vehicle inspection.
+                </p>
+              )}
+              {request.status === "inspecting" && (
+                <p>
+                  <strong className="text-gray-900">Inspection in progress.</strong> The mechanic is reviewing the vehicle, dropping pin coordinates on inspection photos, and estimating repair costs.
+                </p>
+              )}
+              {request.status === "awaiting_approval" && (
+                <p>
+                  <strong className="text-gray-900">Inspection report ready.</strong> The mechanic has submitted findings. Please review each repair item and make your approval decisions.
+                </p>
+              )}
+              {request.status === "repairing" && (
+                <p>
+                  <strong className="text-gray-900">Repairs authorized.</strong> Mechanic is completing work on all approved repair items.
+                </p>
+              )}
+              {request.status === "done" && (
+                <p>
+                  <strong className="text-gray-900">Service completed.</strong> All approved repair items have verified proof-of-repair photos and inspection records.
+                </p>
+              )}
+              {request.status === "cancelled" && (
+                <p className="text-red-700">
+                  <strong className="text-red-900">Service cancelled.</strong> This request was cancelled before repairs started.
+                </p>
+              )}
+            </>
           )}
         </div>
 
