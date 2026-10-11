@@ -1,0 +1,163 @@
+"use client";
+
+import * as React from "react";
+import { MoveHorizontal, AlertCircle } from "lucide-react";
+
+interface BeforeAfterSliderProps {
+  beforeUrl: string;
+  afterUrl?: string | null;
+  partName?: string;
+  className?: string;
+}
+
+export function BeforeAfterSlider({
+  beforeUrl,
+  afterUrl,
+  partName = "Repair item",
+  className = "",
+}: BeforeAfterSliderProps) {
+  const [position, setPosition] = React.useState<number>(50);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const isDraggingRef = React.useRef<boolean>(false);
+
+  const updatePositionFromClientX = React.useCallback((clientX: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const clampedPct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setPosition(clampedPct);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    isDraggingRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Fallback if pointer capture is unsupported
+    }
+    updatePositionFromClientX(e.clientX);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    updatePositionFromClientX(e.clientX);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setPosition((prev) => Math.max(0, prev - 5));
+    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setPosition((prev) => Math.min(100, prev + 5));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setPosition(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setPosition(100);
+    }
+  };
+
+  // If after photo is not yet documented
+  if (!afterUrl) {
+    return (
+      <div
+        className={`relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shadow-sm ${className}`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={beforeUrl}
+          alt={`Before repair - ${partName}`}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+
+        {/* Before label */}
+        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-sm">
+          Before
+        </div>
+
+        {/* Pending documentation badge */}
+        <div className="absolute bottom-3 left-3 right-3 sm:left-auto sm:right-3 flex items-center justify-center gap-1.5 bg-amber-500/90 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>Repair not yet documented</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      className={`relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shadow-sm select-none touch-none cursor-ew-resize group ${className}`}
+    >
+      {/* Before Image (Left / Base layer) */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={beforeUrl}
+        alt={`Before repair - ${partName}`}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+        loading="lazy"
+      />
+
+      {/* After Image (Right / Clipped overlay) */}
+      <div
+        className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none"
+        style={{
+          clipPath: `inset(0 0 0 ${position}%)`,
+          WebkitClipPath: `inset(0 0 0 ${position}%)`,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={afterUrl}
+          alt={`After repair - ${partName}`}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          loading="lazy"
+        />
+      </div>
+
+      {/* Floating Labels */}
+      <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-sm pointer-events-none z-10">
+        Before
+      </div>
+      <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-sm pointer-events-none z-10">
+        After
+      </div>
+
+      {/* Draggable Divider Line & 44px Handle */}
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.4)] pointer-events-none z-10"
+        style={{ left: `${position}%`, transform: "translateX(-50%)" }}
+      >
+        <div
+          role="slider"
+          aria-label={`Before and after comparison slider for ${partName}`}
+          aria-valuenow={Math.round(position)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          className="pointer-events-auto absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-white shadow-lg border border-gray-300 flex items-center justify-center cursor-ew-resize text-gray-700 hover:scale-105 active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+        >
+          <MoveHorizontal className="w-5 h-5 text-gray-700 shrink-0" />
+        </div>
+      </div>
+    </div>
+  );
+}

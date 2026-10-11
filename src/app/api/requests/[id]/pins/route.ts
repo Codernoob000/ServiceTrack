@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { getServiceRoleClient } from "@/lib/supabase/admin";
 import { pinCreateSchema } from "@/lib/validation";
+import { SERVICE_IMAGES_BUCKET } from "@/lib/constants";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -216,7 +217,59 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       };
     });
 
-    return NextResponse.json({ pins: normalizedPins });
+    const isRepairingOrDone = currentReq.status === "repairing" || currentReq.status === "done";
+
+    // Collect all after_photo paths for approved items when status is repairing or done
+    const afterPhotoPaths: string[] = [];
+    if (isRepairingOrDone) {
+      for (const p of normalizedPins) {
+        const item = p.repair_item as { approval_status?: string; after_photo_url?: string | null } | null;
+        if (item && item.approval_status === "approved" && item.after_photo_url && item.after_photo_url.startsWith("requests/")) {
+          afterPhotoPaths.push(item.after_photo_url);
+        }
+      }
+    }
+
+    const signedMap = new Map<string, string>();
+    if (afterPhotoPaths.length > 0) {
+      const { data: signedResults } = await admin.storage
+        .from(SERVICE_IMAGES_BUCKET)
+        .createSignedUrls(afterPhotoPaths, 600);
+
+      if (signedResults) {
+        for (const sr of signedResults) {
+          if (sr.signedUrl && sr.path) {
+            signedMap.set(sr.path, sr.signedUrl);
+          }
+        }
+      }
+    }
+
+    const finalPins = normalizedPins.map((pin) => {
+      const item = pin.repair_item as { approval_status?: string; after_photo_url?: string | null } | null;
+      if (!item) return pin;
+
+      if (isRepairingOrDone && item.approval_status === "approved" && item.after_photo_url) {
+        const signedUrl = signedMap.get(item.after_photo_url) || null;
+        return {
+          ...pin,
+          repair_item: {
+            ...item,
+            after_photo_url: signedUrl,
+          },
+        };
+      }
+
+      return {
+        ...pin,
+        repair_item: {
+          ...item,
+          after_photo_url: null,
+        },
+      };
+    });
+
+    return NextResponse.json({ pins: finalPins });
   } catch (err) {
     console.error("GET pins route error:", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });

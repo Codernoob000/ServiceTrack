@@ -89,6 +89,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       part_name: string;
       description: string;
       estimate: number;
+      has_after_photo: boolean;
     }> = [];
     let serverTotal = 0;
 
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             part_name: pin.part_name,
             description: item.description,
             estimate: est,
+            has_after_photo: Boolean(item.after_photo_url),
           });
         }
       }

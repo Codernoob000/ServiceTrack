@@ -42,7 +42,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Failed to load requests." }, { status: 500 });
       }
 
-      return NextResponse.json({ requests });
+      // Customers must never see the mechanic's user ID
+      const sanitizedRequests = (requests || []).map((r) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { mechanic_id, ...rest } = r;
+        return rest;
+      });
+
+      return NextResponse.json({ requests: sanitizedRequests });
     } else {
       // Mechanic role
       let query = admin

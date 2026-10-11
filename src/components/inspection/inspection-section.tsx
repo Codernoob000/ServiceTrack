@@ -10,6 +10,7 @@ import { PinBottomSheet } from "./pin-bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { BeforeAfterSlider } from "./before-after-slider";
 import {
   Camera,
   Trash2,
@@ -19,6 +20,7 @@ import {
   Clock,
   Plus,
   FileText,
+  RotateCcw,
 } from "lucide-react";
 
 const ANGLES: { value: ViewAngle; label: string }[] = [
@@ -105,6 +107,14 @@ export function InspectionSection({
   const [showConfirmDecisions, setShowConfirmDecisions] = React.useState(false);
   const [isSubmittingDecisions, setIsSubmittingDecisions] = React.useState(false);
   const [decisionsError, setDecisionsError] = React.useState<string | null>(null);
+
+  // After-photo proof state (Phase 4)
+  const afterPhotoInputRef = React.useRef<HTMLInputElement>(null);
+  const [targetUploadItem, setTargetUploadItem] = React.useState<PinWithItem | null>(null);
+  const [uploadingItemId, setUploadingItemId] = React.useState<string | null>(null);
+  const [uploadError, setUploadError] = React.useState<{ itemId: string; message: string } | null>(null);
+  const [showConfirmLastItem, setShowConfirmLastItem] = React.useState(false);
+  const [pendingFile, setPendingFile] = React.useState<File | null>(null);
 
   const isCustomer = userRole === "customer";
   const isMechanic = userRole === "mechanic";
@@ -252,6 +262,69 @@ export function InspectionSection({
   const finalizedApprovedCount = React.useMemo(() => {
     return repairItems.filter((item) => item.approval_status === "approved").length;
   }, [repairItems]);
+
+  const approvedPins = React.useMemo(() => {
+    return pins.filter((p) => p.repair_item?.approval_status === "approved");
+  }, [pins]);
+
+  const documentedCount = React.useMemo(() => {
+    return approvedPins.filter((p) => Boolean(p.repair_item?.after_photo_url)).length;
+  }, [approvedPins]);
+
+  const totalApprovedCount = approvedPins.length;
+
+  const performUploadAfterPhoto = React.useCallback(
+    async (pin: PinWithItem, file: File) => {
+      if (!pin.repair_item) return;
+      const itemId = pin.repair_item.id;
+      setUploadingItemId(itemId);
+      setUploadError(null);
+      try {
+        // Compress in browser to max ~1600px
+        const compressedBlob = await compressImage(file, 1600, 0.85);
+        const fd = new FormData();
+        fd.append("file", compressedBlob, file.name || "after-photo.jpg");
+
+        const res = await authFetch(`/api/requests/${requestId}/items/${itemId}/after-photo`, {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to upload after photo.");
+        }
+
+        await loadInspectionData();
+        onRequestUpdated();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to upload after photo.";
+        setUploadError({ itemId, message: msg });
+      } finally {
+        setUploadingItemId(null);
+        setPendingFile(null);
+        setTargetUploadItem(null);
+      }
+    },
+    [requestId, loadInspectionData, onRequestUpdated]
+  );
+
+  const handleAfterPhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetUploadItem || !targetUploadItem.repair_item) return;
+    e.target.value = "";
+
+    const isLastUndocumented =
+      !targetUploadItem.repair_item.after_photo_url &&
+      documentedCount === totalApprovedCount - 1;
+
+    if (isLastUndocumented) {
+      setPendingFile(file);
+      setShowConfirmLastItem(true);
+    } else {
+      await performUploadAfterPhoto(targetUploadItem, file);
+    }
+  };
 
   // When changing tab, adjust selected image to one matching the tab
   function handleSelectAngle(angle: ViewAngle) {
@@ -763,6 +836,48 @@ export function InspectionSection({
 
       {/* List of Repair Items with Estimates */}
       <div className="space-y-3 pt-2">
+        {/* Repair Documentation Progress in repairing status */}
+        {status === "repairing" && (
+          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+            <div>
+              <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">
+                Repair Documentation Progress
+              </span>
+              <p className="text-sm font-bold text-blue-950 mt-0.5">
+                {documentedCount} of {totalApprovedCount} repairs documented
+              </p>
+              {totalApprovedCount > 0 && documentedCount === totalApprovedCount && (
+                <p className="text-xs text-blue-700 mt-0.5 font-medium">
+                  All approved repairs documented. Request is now Done.
+                </p>
+              )}
+            </div>
+            <div className="w-full sm:w-48 bg-blue-200/80 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-[#2563eb] h-2.5 rounded-full transition-all duration-300"
+                style={{
+                  width: totalApprovedCount > 0 ? `${(documentedCount / totalApprovedCount) * 100}%` : "0%",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Repairs verified summary in done status */}
+        {status === "done" && totalApprovedCount > 0 && documentedCount === totalApprovedCount && (
+          <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/80 flex items-center gap-3 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-emerald-950">Repairs verified</h4>
+              <p className="text-xs text-emerald-800">
+                All {totalApprovedCount} approved repair {totalApprovedCount === 1 ? "item has" : "items have"} verified before &amp; after proof-of-work documentation.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-gray-900">
             Defect Pins & Estimated Repairs ({pins.length})
@@ -782,7 +897,7 @@ export function InspectionSection({
               : "No defect pins added yet. Tap on any photo to drop a pin."}
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {pins.map((pin) => {
               const num = pinNumberMap.get(pin.id) || 1;
               const sev = SEVERITY_BADGES[pin.severity] || SEVERITY_BADGES.medium;
@@ -790,104 +905,182 @@ export function InspectionSection({
                 images.find((i) => i.id === pin.image_id)?.view_angle || "view";
 
               const pinId = pin.id || (pin as unknown as { pin_id?: string }).pin_id;
+              const isApproved = pin.repair_item?.approval_status === "approved";
+              const showProofSlider = (status === "repairing" || status === "done") && isApproved;
+              const beforeImgUrl = images.find((i) => i.id === pin.image_id)?.signed_url || "";
+
               return (
                 <div
                   key={pinId}
-                  className="p-3.5 rounded-lg border border-gray-200 bg-white flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+                  className="p-4 rounded-xl border border-gray-200 bg-white flex flex-col gap-3 shadow-sm"
                 >
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-[#2563eb] text-white text-xs font-bold flex items-center justify-center shrink-0">
-                        {num}
-                      </span>
-                      <h4 className="text-xs font-bold text-gray-900">{pin.part_name}</h4>
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${sev.badgeClass}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${sev.dotClass}`} />
-                        <span>{sev.label}</span>
-                      </span>
-                      <span className="text-[11px] text-gray-500 capitalize">
-                        ({imgAngle})
-                      </span>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-[#2563eb] text-white text-xs font-bold flex items-center justify-center shrink-0">
+                          {num}
+                        </span>
+                        <h4 className="text-xs font-bold text-gray-900">{pin.part_name}</h4>
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${sev.badgeClass}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${sev.dotClass}`} />
+                          <span>{sev.label}</span>
+                        </span>
+                        <span className="text-[11px] text-gray-500 capitalize">
+                          ({imgAngle})
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-gray-800 leading-relaxed pl-8">
+                        {pin.repair_item?.description}
+                      </p>
+
+                      {pin.notes && (
+                        <p className="text-[11px] text-gray-500 italic pl-8">
+                          Notes: {pin.notes}
+                        </p>
+                      )}
                     </div>
 
-                    <p className="text-xs text-gray-800 leading-relaxed pl-8">
-                      {pin.repair_item?.description}
-                    </p>
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between pl-8 sm:pl-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 gap-2 shrink-0">
+                      <div className="text-left sm:text-right">
+                        <span className="text-[11px] text-gray-500 block">Estimate</span>
+                        <span className="text-sm font-bold text-gray-900">
+                          ₹{(pin.repair_item?.estimate || 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
 
-                    {pin.notes && (
-                      <p className="text-[11px] text-gray-500 italic pl-8">
-                        Notes: {pin.notes}
-                      </p>
-                    )}
+                      {!isReadOnly ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePinClick(pin)}
+                          className="touch-target text-xs text-[#2563eb] hover:bg-blue-50"
+                        >
+                          Edit
+                        </Button>
+                      ) : isCustomer && status === "awaiting_approval" && pin.repair_item ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "approved" }))
+                            }
+                            className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
+                              decisions[pin.repair_item.id] === "approved"
+                                ? "bg-emerald-600 text-white shadow-sm"
+                                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            {decisions[pin.repair_item.id] === "approved" ? "Approved" : "Approve"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "rejected" }))
+                            }
+                            className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
+                              decisions[pin.repair_item.id] === "rejected"
+                                ? "bg-gray-800 text-white shadow-sm"
+                                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            {decisions[pin.repair_item.id] === "rejected" ? "Rejected" : "Reject"}
+                          </button>
+                        </div>
+                      ) : pin.repair_item ? (
+                        <div className="flex items-center pt-1">
+                          {pin.repair_item.approval_status === "approved" ? (
+                            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 inline-block">
+                              Approved
+                            </span>
+                          ) : pin.repair_item.approval_status === "rejected" ? (
+                            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 border border-gray-300 inline-block">
+                              Rejected
+                            </span>
+                          ) : (
+                            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-300 inline-block">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div className="flex sm:flex-col items-center sm:items-end justify-between pl-8 sm:pl-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 gap-2">
-                    <div className="text-left sm:text-right">
-                      <span className="text-[11px] text-gray-500 block">Estimate</span>
-                      <span className="text-sm font-bold text-gray-900">
-                        ₹{(pin.repair_item?.estimate || 0).toLocaleString("en-IN")}
-                      </span>
-                    </div>
-
-                    {!isReadOnly ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handlePinClick(pin)}
-                        className="touch-target text-xs text-[#2563eb] hover:bg-blue-50"
-                      >
-                        Edit
-                      </Button>
-                    ) : isCustomer && status === "awaiting_approval" && pin.repair_item ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "approved" }))
-                          }
-                          className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
-                            decisions[pin.repair_item.id] === "approved"
-                              ? "bg-emerald-600 text-white shadow-sm"
-                              : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          {decisions[pin.repair_item.id] === "approved" ? "Approved" : "Approve"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDecisions((prev) => ({ ...prev, [pin.repair_item!.id]: "rejected" }))
-                          }
-                          className={`touch-target px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[44px] min-w-[76px] transition-all flex items-center justify-center gap-1 ${
-                            decisions[pin.repair_item.id] === "rejected"
-                              ? "bg-gray-800 text-white shadow-sm"
-                              : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          {decisions[pin.repair_item.id] === "rejected" ? "Rejected" : "Reject"}
-                        </button>
-                      </div>
-                    ) : pin.repair_item ? (
-                      <div className="flex items-center pt-1">
-                        {pin.repair_item.approval_status === "approved" ? (
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 inline-block">
-                            Approved
-                          </span>
-                        ) : pin.repair_item.approval_status === "rejected" ? (
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 border border-gray-300 inline-block">
-                            Rejected
+                  {/* Phase 4: Before / After Slider for Approved Items */}
+                  {showProofSlider && (
+                    <div className="pt-3 border-t border-gray-100 pl-0 sm:pl-8">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-800">
+                          Repair Verification Proof
+                        </span>
+                        {pin.repair_item?.after_photo_url ? (
+                          <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Documented
                           </span>
                         ) : (
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-300 inline-block">
-                            Pending
+                          <span className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Photo Pending
                           </span>
                         )}
                       </div>
-                    ) : null}
-                  </div>
+
+                      <div className="max-w-lg">
+                        <BeforeAfterSlider
+                          beforeUrl={beforeImgUrl}
+                          afterUrl={pin.repair_item?.after_photo_url}
+                          partName={pin.part_name}
+                        />
+                      </div>
+
+                      {/* Assigned Mechanic Action while in repairing status */}
+                      {isMechanic && isAssignedMechanic && status === "repairing" && pin.repair_item && (
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <Button
+                            type="button"
+                            variant={pin.repair_item.after_photo_url ? "outline" : "primary"}
+                            size="sm"
+                            disabled={uploadingItemId === pin.repair_item.id}
+                            onClick={() => {
+                              setTargetUploadItem(pin);
+                              afterPhotoInputRef.current?.click();
+                            }}
+                            className={`touch-target text-xs font-semibold min-h-[44px] ${
+                              !pin.repair_item.after_photo_url
+                                ? "bg-[#2563eb] hover:bg-blue-700 text-white"
+                                : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            {uploadingItemId === pin.repair_item.id ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                                <span>Compressing &amp; uploading...</span>
+                              </>
+                            ) : pin.repair_item.after_photo_url ? (
+                              <>
+                                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                                <span>Replace photo</span>
+                              </>
+                            ) : (
+                              <>
+                                <Camera className="w-3.5 h-3.5 mr-1.5" />
+                                <span>Add after photo</span>
+                              </>
+                            )}
+                          </Button>
+
+                          {uploadError?.itemId === pin.repair_item.id && (
+                            <p className="text-xs text-red-600 font-medium">
+                              {uploadError.message}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1069,6 +1262,37 @@ export function InspectionSection({
         isLoading={isSubmittingDecisions}
         onConfirm={handleSubmitDecisionsConfirm}
         onCancel={() => setShowConfirmDecisions(false)}
+      />
+
+      {/* Confirm Last Item Completion Dialog (Phase 4) */}
+      <ConfirmDialog
+        isOpen={showConfirmLastItem}
+        title="Complete Repair Service"
+        description="This completes the repair and cannot be changed afterwards."
+        confirmLabel="Upload & Complete"
+        cancelLabel="Cancel"
+        variant="primary"
+        isLoading={uploadingItemId !== null}
+        onConfirm={async () => {
+          setShowConfirmLastItem(false);
+          if (targetUploadItem && pendingFile) {
+            await performUploadAfterPhoto(targetUploadItem, pendingFile);
+          }
+        }}
+        onCancel={() => {
+          setShowConfirmLastItem(false);
+          setPendingFile(null);
+          setTargetUploadItem(null);
+        }}
+      />
+
+      {/* Hidden file input for after-photo uploads */}
+      <input
+        ref={afterPhotoInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleAfterPhotoFileChange}
       />
     </div>
   );
