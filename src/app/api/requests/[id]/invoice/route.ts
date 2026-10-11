@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { getServiceRoleClient } from "@/lib/supabase/admin";
+import { SERVICE_IMAGES_BUCKET } from "@/lib/constants";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -90,6 +91,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       description: string;
       estimate: number;
       has_after_photo: boolean;
+      after_photo_url: string | null;
     }> = [];
     let serverTotal = 0;
 
@@ -109,6 +111,46 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Failed to load invoice items." }, { status: 500 });
       }
 
+      // Collect all after_photo paths for approved items
+      const afterPhotoPaths: string[] = [];
+      for (const pin of pins || []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const item = Array.isArray((pin as any).repair_item)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? (pin as any).repair_item[0]
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : (pin as any).repair_item;
+
+        if (
+          item &&
+          item.approval_status === "approved" &&
+          item.after_photo_url &&
+          typeof item.after_photo_url === "string" &&
+          item.after_photo_url.startsWith("requests/")
+        ) {
+          afterPhotoPaths.push(item.after_photo_url);
+        }
+      }
+
+      const signedMap = new Map<string, string>();
+      if (afterPhotoPaths.length > 0) {
+        try {
+          const { data: signedResults } = await admin.storage
+            .from(SERVICE_IMAGES_BUCKET)
+            .createSignedUrls(afterPhotoPaths, 600);
+
+          if (signedResults) {
+            for (const sr of signedResults) {
+              if (sr.signedUrl && sr.path && sr.signedUrl.trim() !== "") {
+                signedMap.set(sr.path, sr.signedUrl);
+              }
+            }
+          }
+        } catch {
+          // Do not fail the whole response if storage signed URL creation fails
+        }
+      }
+
       for (const pin of pins || []) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const item = Array.isArray((pin as any).repair_item)
@@ -120,12 +162,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         if (item && item.approval_status === "approved") {
           const est = typeof item.estimate === "number" ? item.estimate : parseInt(item.estimate, 10) || 0;
           serverTotal += est;
+          const rawSigned = item.after_photo_url ? signedMap.get(item.after_photo_url) : null;
+          const signedUrl = rawSigned && rawSigned.trim() !== "" ? rawSigned : null;
+
           approvedItems.push({
             id: item.id,
             part_name: pin.part_name,
             description: item.description,
             estimate: est,
             has_after_photo: Boolean(item.after_photo_url),
+            after_photo_url: signedUrl,
           });
         }
       }

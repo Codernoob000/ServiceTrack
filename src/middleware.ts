@@ -4,8 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Safeguard: Never run middleware logic on API or static asset requests
-  if (path.startsWith("/api/") || path.startsWith("/_next/")) {
+  // Safeguard: Never run middleware logic on API, static asset requests, or public history pages
+  if (path.startsWith("/api/") || path.startsWith("/_next/") || path.startsWith("/h/")) {
     return NextResponse.next();
   }
 

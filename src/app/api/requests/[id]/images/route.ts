@@ -325,15 +325,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Generate signed URLs in bulk (10 minute expiry) from SERVICE_IMAGES_BUCKET
     const paths = images.map((img) => img.storage_path);
-    const { data: signedUrls } = await admin.storage
-      .from(SERVICE_IMAGES_BUCKET)
-      .createSignedUrls(paths, 600);
+    let signedUrls: Array<{ path: string | null; signedUrl: string | null }> | null = null;
+    try {
+      const { data } = await admin.storage
+        .from(SERVICE_IMAGES_BUCKET)
+        .createSignedUrls(paths, 600);
+      signedUrls = data;
+    } catch {
+      // Do not fail the whole response if storage signed URL creation fails
+      signedUrls = null;
+    }
 
     const imagesWithSignedUrls = images.map((img) => {
       const match = signedUrls?.find((s) => s.path === img.storage_path);
+      const url = match?.signedUrl;
       return {
         ...img,
-        signed_url: match?.signedUrl || null,
+        signed_url: url && typeof url === "string" && url.trim() !== "" ? url : null,
       };
     });
 

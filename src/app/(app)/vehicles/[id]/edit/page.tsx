@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { ErrorState } from "@/components/error-state";
 import { authFetch } from "@/lib/auth-fetch";
 import { ArrowLeft, Car, Loader2 } from "lucide-react";
+import { VehiclePublicLinkSection } from "@/components/vehicle-public-link-section";
 
 export default function EditVehiclePage() {
   const params = useParams();
@@ -262,6 +263,9 @@ export default function EditVehiclePage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Service history link section */}
+      <VehiclePublicLinkSection vehicleId={id} plate={plate} />
     </div>
   );
 }

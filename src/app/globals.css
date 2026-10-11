@@ -45,5 +45,28 @@
   [role="navigation"] {
     display: none !important;
   }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-only-qr,
+  .print-only-qr * {
+    visibility: visible;
+  }
+
+  .print-only-qr {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 2rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: white !important;
+  }
 }
 

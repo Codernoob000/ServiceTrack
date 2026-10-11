@@ -7,14 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/cross-user-access.test.ts tests/role-authorization.test.ts tests/mechanic-queue-banner.test.ts tests/cross-user-live.test.ts tests/phase2-inspection.test.ts tests/phase3-decisions.test.ts tests/phase4-proof.test.ts"
+    "test": "tsx --test --test-concurrency=1 tests/cross-user-access.test.ts tests/role-authorization.test.ts tests/mechanic-queue-banner.test.ts tests/cross-user-live.test.ts tests/phase2-inspection.test.ts tests/phase3-decisions.test.ts tests/phase4-proof.test.ts tests/phase5-history.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
+    "@types/qrcode": "^1.5.6",
     "clsx": "^2.1.1",
     "lucide-react": "^1.52.0",
     "next": "16.4.0",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",

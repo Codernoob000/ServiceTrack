@@ -21,6 +21,7 @@ import {
   Plus,
   FileText,
   RotateCcw,
+  ImageOff,
 } from "lucide-react";
 
 const ANGLES: { value: ViewAngle; label: string }[] = [
@@ -712,40 +713,70 @@ export function InspectionSection({
         )}
       </div>
 
-      {/* Main Interactive Canvas or Upload Box */}
+      {/* Main Interactive Canvas, Unavailable Box, or Upload Box */}
       <div className="space-y-3">
-        {currentImage?.signed_url ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span className="capitalize font-semibold text-gray-800">
-                {activeAngle} Angle Photo
-              </span>
+        {currentImage ? (
+          currentImage.signed_url ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span className="capitalize font-semibold text-gray-800">
+                  {activeAngle} Angle Photo
+                </span>
 
-              {!isReadOnly && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowConfirmDeleteImage(true)}
-                    className="touch-target text-red-600 hover:text-red-700 hover:bg-red-50 text-xs gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Photo</span>
-                  </Button>
-                </div>
-              )}
+                {!isReadOnly && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowConfirmDeleteImage(true)}
+                      className="touch-target text-red-600 hover:text-red-700 hover:bg-red-50 text-xs gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Photo</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <InspectionCanvas
+                imageUrl={currentImage.signed_url}
+                pins={pinsForCurrentImage}
+                pinNumberMap={pinNumberMap}
+                readOnly={isReadOnly}
+                onDropPin={handleDropPin}
+                onPinClick={handlePinClick}
+              />
             </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span className="capitalize font-semibold text-gray-800">
+                  {activeAngle} Angle Photo
+                </span>
 
-            <InspectionCanvas
-              imageUrl={currentImage.signed_url}
-              pins={pinsForCurrentImage}
-              pinNumberMap={pinNumberMap}
-              readOnly={isReadOnly}
-              onDropPin={handleDropPin}
-              onPinClick={handlePinClick}
-            />
-          </div>
+                {!isReadOnly && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowConfirmDeleteImage(true)}
+                      className="touch-target text-red-600 hover:text-red-700 hover:bg-red-50 text-xs gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Photo</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] max-h-[520px] bg-gray-100 rounded-xl overflow-hidden select-none border border-gray-200 flex flex-col items-center justify-center text-gray-500 gap-2 shadow-xs">
+                <ImageOff className="w-8 h-8 text-gray-400" />
+                <span className="text-sm font-medium text-gray-600">Photo unavailable</span>
+              </div>
+            </div>
+          )
         ) : (
           /* Empty state for this angle */
           <div className="p-8 rounded-xl border border-dashed border-gray-300 bg-white text-center flex flex-col items-center justify-center space-y-3">
@@ -872,7 +903,7 @@ export function InspectionSection({
             <div>
               <h4 className="text-sm font-bold text-emerald-950">Repairs verified</h4>
               <p className="text-xs text-emerald-800">
-                All {totalApprovedCount} approved repair {totalApprovedCount === 1 ? "item has" : "items have"} verified before &amp; after proof-of-work documentation.
+                All {totalApprovedCount} approved repair {totalApprovedCount === 1 ? "item has" : "items have"} before &amp; after repair photo documentation.
               </p>
             </div>
           </div>
@@ -907,7 +938,7 @@ export function InspectionSection({
               const pinId = pin.id || (pin as unknown as { pin_id?: string }).pin_id;
               const isApproved = pin.repair_item?.approval_status === "approved";
               const showProofSlider = (status === "repairing" || status === "done") && isApproved;
-              const beforeImgUrl = images.find((i) => i.id === pin.image_id)?.signed_url || "";
+              const beforeImgUrl = images.find((i) => i.id === pin.image_id)?.signed_url || null;
 
               return (
                 <div

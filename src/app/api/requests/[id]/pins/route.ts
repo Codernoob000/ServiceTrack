@@ -232,16 +232,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const signedMap = new Map<string, string>();
     if (afterPhotoPaths.length > 0) {
-      const { data: signedResults } = await admin.storage
-        .from(SERVICE_IMAGES_BUCKET)
-        .createSignedUrls(afterPhotoPaths, 600);
+      try {
+        const { data: signedResults } = await admin.storage
+          .from(SERVICE_IMAGES_BUCKET)
+          .createSignedUrls(afterPhotoPaths, 600);
 
-      if (signedResults) {
-        for (const sr of signedResults) {
-          if (sr.signedUrl && sr.path) {
-            signedMap.set(sr.path, sr.signedUrl);
+        if (signedResults) {
+          for (const sr of signedResults) {
+            if (sr.signedUrl && sr.path && sr.signedUrl.trim() !== "") {
+              signedMap.set(sr.path, sr.signedUrl);
+            }
           }
         }
+      } catch {
+        // Do not fail the whole response if storage fails
       }
     }
 
@@ -250,7 +254,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       if (!item) return pin;
 
       if (isRepairingOrDone && item.approval_status === "approved" && item.after_photo_url) {
-        const signedUrl = signedMap.get(item.after_photo_url) || null;
+        const rawSigned = signedMap.get(item.after_photo_url);
+        const signedUrl = rawSigned && rawSigned.trim() !== "" ? rawSigned : null;
         return {
           ...pin,
           repair_item: {

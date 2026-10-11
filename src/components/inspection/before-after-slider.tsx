@@ -1,13 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { MoveHorizontal, AlertCircle } from "lucide-react";
+import { MoveHorizontal, ImageOff } from "lucide-react";
 
 interface BeforeAfterSliderProps {
-  beforeUrl: string;
+  beforeUrl?: string | null;
   afterUrl?: string | null;
   partName?: string;
   className?: string;
+}
+
+export function PhotoUnavailablePlaceholder({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`w-full h-full bg-gray-100 flex flex-col items-center justify-center text-gray-500 gap-2 select-none ${className}`}
+    >
+      <ImageOff className="w-8 h-8 text-gray-400" />
+      <span className="text-xs sm:text-sm font-medium text-gray-600">Photo unavailable</span>
+    </div>
+  );
 }
 
 export function BeforeAfterSlider({
@@ -19,6 +30,9 @@ export function BeforeAfterSlider({
   const [position, setPosition] = React.useState<number>(50);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const isDraggingRef = React.useRef<boolean>(false);
+
+  const hasBefore = Boolean(beforeUrl && typeof beforeUrl === "string" && beforeUrl.trim() !== "");
+  const hasAfter = Boolean(afterUrl && typeof afterUrl === "string" && afterUrl.trim() !== "");
 
   const updatePositionFromClientX = React.useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -69,30 +83,14 @@ export function BeforeAfterSlider({
     }
   };
 
-  // If after photo is not yet documented
-  if (!afterUrl) {
+  // If neither photo is available, render a neutral "Photo unavailable" box with identical dimensions
+  if (!hasBefore && !hasAfter) {
     return (
       <div
-        className={`relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shadow-sm ${className}`}
+        className={`relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shadow-sm flex flex-col items-center justify-center text-gray-500 gap-2 select-none ${className}`}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={beforeUrl}
-          alt={`Before repair - ${partName}`}
-          className="w-full h-full object-cover"
-          loading="lazy"
-        />
-
-        {/* Before label */}
-        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-sm">
-          Before
-        </div>
-
-        {/* Pending documentation badge */}
-        <div className="absolute bottom-3 left-3 right-3 sm:left-auto sm:right-3 flex items-center justify-center gap-1.5 bg-amber-500/90 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>Repair not yet documented</span>
-        </div>
+        <ImageOff className="w-8 h-8 text-gray-400" />
+        <span className="text-xs sm:text-sm font-medium text-gray-600">Photo unavailable</span>
       </div>
     );
   }
@@ -106,16 +104,22 @@ export function BeforeAfterSlider({
       onPointerCancel={handlePointerUp}
       className={`relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shadow-sm select-none touch-none cursor-ew-resize group ${className}`}
     >
-      {/* Before Image (Left / Base layer) */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={beforeUrl}
-        alt={`Before repair - ${partName}`}
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-        loading="lazy"
-      />
+      {/* Before Layer (Base layer) */}
+      {hasBefore ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={beforeUrl!}
+          alt={`Before repair - ${partName}`}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          loading="lazy"
+        />
+      ) : (
+        <div className="absolute inset-0 w-full h-full">
+          <PhotoUnavailablePlaceholder />
+        </div>
+      )}
 
-      {/* After Image (Right / Clipped overlay) */}
+      {/* After Layer (Clipped overlay) */}
       <div
         className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none"
         style={{
@@ -123,13 +127,19 @@ export function BeforeAfterSlider({
           WebkitClipPath: `inset(0 0 0 ${position}%)`,
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={afterUrl}
-          alt={`After repair - ${partName}`}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-          loading="lazy"
-        />
+        {hasAfter ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={afterUrl!}
+            alt={`After repair - ${partName}`}
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 w-full h-full">
+            <PhotoUnavailablePlaceholder />
+          </div>
+        )}
       </div>
 
       {/* Floating Labels */}

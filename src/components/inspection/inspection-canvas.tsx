@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { ImageOff } from "lucide-react";
 import { PinWithItem, Severity } from "@/lib/types";
 
 interface InspectionCanvasProps {
-  imageUrl: string;
+  imageUrl?: string | null;
   pins: PinWithItem[];
   pinNumberMap: Map<string, number>;
   selectedPinId?: string | null;
@@ -165,13 +166,20 @@ export function InspectionCanvas({
       }`}
     >
       {/* Underlying Image */}
-      <img
-        ref={imgRef}
-        src={imageUrl}
-        alt="Vehicle Inspection View"
-        onLoad={handleImageLoad}
-        className="w-full h-full object-contain pointer-events-none"
-      />
+      {imageUrl && imageUrl.trim() !== "" ? (
+        <img
+          ref={imgRef}
+          src={imageUrl}
+          alt="Vehicle Inspection View"
+          onLoad={handleImageLoad}
+          className="w-full h-full object-contain pointer-events-none"
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-500 gap-2 select-none">
+          <ImageOff className="w-8 h-8 text-gray-400" />
+          <span className="text-xs sm:text-sm font-medium text-gray-600">Photo unavailable</span>
+        </div>
+      )}
 
       {/* Interactive Rendered Overlay for Exact Pin Alignment */}
       <div
