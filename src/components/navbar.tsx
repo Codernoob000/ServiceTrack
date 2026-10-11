@@ -35,7 +35,7 @@ export function Navbar({ profile }: NavbarProps) {
   const isMechanic = profile?.role === "mechanic";
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-gray-200 print:hidden">
+    <header className="sticky top-0 z-40 bg-white border-b border-gray-200 no-print print:hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-6">

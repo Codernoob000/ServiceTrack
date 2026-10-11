@@ -32,21 +32,7 @@ export default function EditVehiclePage() {
     setError(null);
     setIsNotFound(false);
     try {
-      // 1. Check user profile / role directly
-      const profileRes = await authFetch("/api/user/profile");
-      if (profileRes.status === 401) {
-        router.push("/auth");
-        return;
-      }
-      if (profileRes.ok) {
-        const profileData = await profileRes.json();
-        if (profileData.profile?.role === "mechanic") {
-          router.push("/mechanic/queue");
-          return;
-        }
-      }
-
-      // 2. Fetch vehicle details
+      // 1. Fetch vehicle details
       const res = await authFetch(`/api/vehicles/${id}`);
       if (res.status === 403 || res.status === 404) {
         setIsNotFound(true);

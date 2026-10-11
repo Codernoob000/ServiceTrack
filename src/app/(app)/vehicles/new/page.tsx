@@ -21,26 +21,6 @@ export default function NewVehiclePage() {
   const [error, setError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  React.useEffect(() => {
-    async function checkRole() {
-      try {
-        const res = await authFetch("/api/user/profile");
-        if (res.status === 401) {
-          router.push("/auth");
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json();
-          if (data.profile?.role === "mechanic") {
-            router.push("/mechanic/queue");
-          }
-        }
-      } catch (err) {
-        console.error("Role check error:", err);
-      }
-    }
-    checkRole();
-  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

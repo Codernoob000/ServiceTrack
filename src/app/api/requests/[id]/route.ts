@@ -68,7 +68,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       delete responseReq.mechanic_id;
     }
 
-    return NextResponse.json({ request: responseReq });
+    return NextResponse.json({
+      request: responseReq,
+      user_role: profile.role,
+      user_id: user.id,
+    });
   } catch (err) {
     console.error("Request GET by id error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

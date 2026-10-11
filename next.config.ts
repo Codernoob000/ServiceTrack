@@ -1,21 +1,27 @@
 import type { NextConfig } from "next";
 
-// Extract exact Supabase host for tight CSP (fallback to wildcard if env var is missing at build time)
+// Extract exact Supabase host for tight CSP (no wildcards)
 const supabaseHost = (() => {
   try {
-    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || "").host;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    return url ? new URL(url).host : "";
   } catch {
-    return "*.supabase.co";
+    return "";
   }
 })();
+
+const supabaseConnect = supabaseHost
+  ? `https://${supabaseHost} wss://${supabaseHost}`
+  : "";
+const supabaseImg = supabaseHost ? `https://${supabaseHost}` : "";
 
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-eval' 'unsafe-inline';
   style-src 'self' 'unsafe-inline';
-  img-src 'self' blob: data: https://${supabaseHost};
+  img-src 'self' blob: data: ${supabaseImg};
   font-src 'self' data:;
-  connect-src 'self' https://*.supabase.co wss://*.supabase.co https: wss:;
+  connect-src 'self' ${supabaseConnect};
   frame-ancestors 'none';
   object-src 'none';
   base-uri 'self';

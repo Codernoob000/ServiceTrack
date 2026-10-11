@@ -39,6 +39,17 @@
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
   header,
   nav,
   .no-print,
@@ -46,13 +57,15 @@
     display: none !important;
   }
 
-  body * {
-    visibility: hidden;
-  }
-
-  .print-only-qr,
-  .print-only-qr * {
-    visibility: visible;
+  .invoice-print-root {
+    display: block !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .print-only-qr {

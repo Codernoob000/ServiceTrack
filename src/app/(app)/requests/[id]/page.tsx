@@ -48,25 +48,12 @@ export default function RequestDetailPage() {
     setError(null);
     setIsNotFound(false);
     try {
-      let activeRole = "customer";
-      let activeUid: string | null = null;
-
-      // 1. Fetch current user profile to determine role
-      const profileRes = await authFetch("/api/user/profile");
-      if (profileRes.status === 401) {
+      // Fetch specific request details
+      const res = await authFetch(`/api/requests/${id}`);
+      if (res.status === 401) {
         router.push("/auth");
         return;
       }
-      if (profileRes.ok) {
-        const profileData = await profileRes.json();
-        activeRole = profileData.profile?.role || "customer";
-        activeUid = profileData.user?.id || null;
-        setUserRole(activeRole as "customer" | "mechanic");
-        setUserId(activeUid);
-      }
-
-      // 2. Fetch specific request details
-      const res = await authFetch(`/api/requests/${id}`);
       if (res.status === 403 || res.status === 404) {
         setIsNotFound(true);
         setLoading(false);
@@ -78,6 +65,10 @@ export default function RequestDetailPage() {
       }
 
       const data = await res.json();
+      const activeRole = data.user_role || "customer";
+      const activeUid = data.user_id || null;
+      setUserRole(activeRole as "customer" | "mechanic");
+      setUserId(activeUid);
       setRequest(data.request);
 
       // If assigned mechanic in inspecting, fetch initial imagesCount to determine release eligibility

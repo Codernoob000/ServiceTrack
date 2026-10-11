@@ -142,8 +142,8 @@ export default function InvoicePage() {
       <style jsx global>{`
         @media print {
           @page {
+            size: A4 portrait;
             margin: 10mm;
-            size: auto;
           }
           html,
           body {
@@ -152,10 +152,7 @@ export default function InvoicePage() {
             margin: 0 !important;
             padding: 0 !important;
           }
-          header,
-          nav,
-          .no-print,
-          [role="navigation"] {
+          .no-print {
             display: none !important;
           }
           main {
@@ -170,12 +167,14 @@ export default function InvoicePage() {
             max-width: 100% !important;
             width: 100% !important;
           }
-          .invoice-card {
+          .invoice-print-root {
             border: none !important;
             box-shadow: none !important;
             padding: 0 !important;
             margin: 0 !important;
             width: 100% !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
         }
       `}</style>
@@ -201,7 +200,7 @@ export default function InvoicePage() {
       </div>
 
       {/* Printable Invoice Card */}
-      <Card className="invoice-card p-6 sm:p-8 space-y-6 bg-white border border-gray-200">
+      <Card className="invoice-card invoice-print-root p-6 sm:p-8 space-y-6 bg-white border border-gray-200">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 pb-6 border-b border-gray-200">
           <div>
